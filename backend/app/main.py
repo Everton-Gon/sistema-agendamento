@@ -34,6 +34,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000", settings.frontend_url],
+    # allow_origins=["*"], # Permite qualquer origem (para Dev Tunnels/Mobile)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

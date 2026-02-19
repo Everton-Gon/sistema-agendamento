@@ -1,0 +1,54 @@
+# ========================
+# Backend
+# ========================
+
+# Ambiente virtual Python
+backend/venv/
+backend/.venv/
+
+# Arquivos de cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Variáveis de ambiente (SENHAS E CHAVES!)
+.env
+backend/.env
+
+# Banco de dados local
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# ========================
+# Frontend
+# ========================
+
+# Dependências Node.js
+frontend/node_modules/
+node_modules/
+
+# Build de produção
+frontend/dist/
+frontend/build/
+
+# Variáveis de ambiente frontend
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# ========================
+# Sistema
+# ========================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

@@ -20,6 +20,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 password_reset_tokens = {}
 
 
+# =====================
+# Debug endpoint
+# =====================
+@router.options("/register")
+async def register_options():
+    """Handle CORS preflight for register."""
+    return {"message": "OK"}
+
+
 def hash_password(password: str) -> str:
     """Hash password using SHA256."""
     return hashlib.sha256(password.encode()).hexdigest()
@@ -96,43 +105,52 @@ async def register(
     db: AsyncSession = Depends(get_db)
 ):
     """Registrar novo usuário."""
-    # Verificar se email já existe
-    result = await db.execute(
-        select(Usuario).where(Usuario.email == user_data.email)
-    )
-    existing_user = result.scalar_one_or_none()
-    
-    if existing_user:
+    try:
+        # Verificar se email já existe
+        result = await db.execute(
+            select(Usuario).where(Usuario.email == user_data.email)
+        )
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email já cadastrado"
+            )
+        
+        # Criar hash da senha
+        senha_hash = hash_password(user_data.password)
+        
+        # Criar usuário
+        novo_usuario = Usuario(
+            email=user_data.email,
+            nome=user_data.name,
+            senha_hash=senha_hash
+        )
+        
+        db.add(novo_usuario)
+        await db.commit()
+        await db.refresh(novo_usuario)
+        
+        # Gerar token
+        token = auth_service.create_jwt_token(novo_usuario)
+        
+        return TokenResponse(
+            access_token=token,
+            user=UserResponse(
+                id=novo_usuario.id,
+                email=novo_usuario.email,
+                name=novo_usuario.nome
+            )
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erro ao registrar: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email já cadastrado"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao criar conta: {str(e)}"
         )
-    
-    # Criar hash da senha
-    senha_hash = hash_password(user_data.password)
-    
-    # Criar usuário
-    novo_usuario = Usuario(
-        email=user_data.email,
-        nome=user_data.name,
-        senha_hash=senha_hash
-    )
-    
-    db.add(novo_usuario)
-    await db.commit()
-    await db.refresh(novo_usuario)
-    
-    # Gerar token
-    token = auth_service.create_jwt_token(novo_usuario)
-    
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=novo_usuario.id,
-            email=novo_usuario.email,
-            name=novo_usuario.nome
-        )
-    )
 
 
 @router.post("/login", response_model=TokenResponse)

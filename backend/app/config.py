@@ -15,8 +15,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     
-    # Frontend
+    # Frontend - URLs permitidas para CORS (separadas por vírgula)
     frontend_url: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:5174"
     
     # SMTP (E-mail)
     smtp_host: str = "smtp.gmail.com"
@@ -25,6 +26,12 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     email_from: str = ""
     email_from_name: str = "Sistema de Agendamento"
+    
+    # Microsoft Azure / Teams
+    azure_client_id: str = ""
+    azure_tenant_id: str = ""
+    azure_client_secret: str = ""
+    azure_organizer_email: str = ""
     
     @property
     def database_url(self) -> str:

@@ -108,6 +108,7 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick }) {
                                         }}
                                         title={`${event.title} - ${event.room_name}`}
                                     >
+                                        {event.teams_link && <span style={{ marginRight: '4px' }}>🎥</span>}
                                         {format(new Date(event.start), 'HH:mm')} {event.title}
                                     </div>
                                 ))}

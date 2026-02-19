@@ -64,7 +64,7 @@ function Register() {
                     <div style={{
                         width: '80px',
                         height: '80px',
-                        background: 'var(--gradient-primary)',
+                        background: 'var(--gradient-tertiary)',
                         borderRadius: 'var(--radius-xl)',
                         display: 'flex',
                         alignItems: 'center',

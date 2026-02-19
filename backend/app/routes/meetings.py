@@ -10,6 +10,7 @@ import secrets
 from app.database import get_db, Reuniao, Sala, RecursoSala, ParticipanteReuniao, Usuario
 from app.routes.auth import get_current_user
 from app.services.email_service import email_service
+from app.services.graph_service import graph_service
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -101,6 +102,7 @@ async def get_meetings(
             "is_recurring": False,
             "recurrence_pattern": None,
             "status": r.status,
+            "teams_link": r.teams_link,
             "created_at": r.criado_em.isoformat()
         }
         for r in reunioes
@@ -140,7 +142,8 @@ async def get_calendar_events(
             "room_name": r.sala.nome if r.sala else "Sala",
             "room_color": r.sala.cor if r.sala else "#6366F1",
             "organizer_name": r.organizador.nome if r.organizador else "Organizador",
-            "is_own_meeting": r.organizador_id == current_user.id
+            "is_own_meeting": r.organizador_id == current_user.id,
+            "teams_link": r.teams_link
         }
         for r in reunioes
     ]
@@ -252,6 +255,27 @@ async def create_meeting(
     await db.commit()
     await db.refresh(reuniao)
     
+    # Criar evento de calendário no Microsoft Teams/Outlook
+    teams_link = None
+    try:
+        attendee_emails = [att.email for att in meeting_data.attendees]
+        # Usar create_calendar_event para garantir notificações e presença na agenda
+        teams_result = await graph_service.create_calendar_event(
+            subject=meeting_data.title,
+            start=start_dt,
+            end=end_dt,
+            attendees=attendee_emails,
+            description=meeting_data.description
+        )
+        if teams_result:
+            teams_link = teams_result["join_url"]
+            reuniao.teams_link = teams_link
+            reuniao.teams_event_id = teams_result["event_id"]
+            await db.commit()
+            await db.refresh(reuniao)
+    except Exception as e:
+        print(f"⚠️ Erro ao criar evento no Teams (reunião local criada): {e}")
+    
     # Enviar e-mails para os participantes em background
     for att_info in tokens_participantes:
         background_tasks.add_task(
@@ -267,7 +291,8 @@ async def create_meeting(
             organizer_name=current_user.nome,
             organizer_email=current_user.email,
             confirmation_token=att_info["token"],
-            description=meeting_data.description
+            description=meeting_data.description,
+            teams_link=teams_link
         )
     
     return {
@@ -286,6 +311,7 @@ async def create_meeting(
         "is_recurring": False,
         "recurrence_pattern": None,
         "status": reuniao.status,
+        "teams_link": reuniao.teams_link,
         "created_at": reuniao.criado_em.isoformat()
     }
 
@@ -407,6 +433,7 @@ async def get_meeting(
         "is_recurring": False,
         "recurrence_pattern": None,
         "status": reuniao.status,
+        "teams_link": reuniao.teams_link,
         "created_at": reuniao.criado_em.isoformat()
     }
 
@@ -429,7 +456,14 @@ async def cancel_meeting(
     if reuniao.organizador_id != current_user.id:
         raise HTTPException(status_code=403, detail="Apenas o organizador pode cancelar")
     
-    reuniao.status = "cancelada"
+    # Cancelar evento no Teams se existir
+    if reuniao.teams_event_id:
+        try:
+            await graph_service.cancel_calendar_event(reuniao.teams_event_id)
+        except Exception as e:
+            print(f"⚠️ Erro ao cancelar evento no Teams: {e}")
+    
+    reuniao.status = 'cancelada'
     await db.commit()
     
     return {"message": "Reunião cancelada com sucesso"}

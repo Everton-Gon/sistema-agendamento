@@ -104,6 +104,8 @@ class Reuniao(Base):
     data_hora_inicio: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     data_hora_fim: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default='agendada', index=True)
+    teams_link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    teams_event_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
     
@@ -141,9 +143,9 @@ class ParticipanteReuniao(Base):
 # =====================
 async def init_db():
     """Inicializar banco de dados."""
-    # Tabelas já foram criadas manualmente no MySQL
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
+    # Criar tabelas se não existirem
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     
     print("✅ MySQL conectado com sucesso!")
     print(f"   Database: {settings.mysql_database}")

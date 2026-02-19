@@ -329,6 +329,38 @@ function MyMeetings() {
                                 <strong>Criado em:</strong> {format(new Date(selectedMeeting.created_at), "dd/MM/yyyy 'às' HH:mm")}
                             </p>
                         </div>
+
+                        {selectedMeeting.teams_link && (
+                            <div style={{
+                                padding: 'var(--space-md)',
+                                background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
+                                borderRadius: 'var(--radius-md)',
+                                textAlign: 'center'
+                            }}>
+                                <p className="text-sm font-medium" style={{ color: '#4338ca', marginBottom: 'var(--space-sm)' }}>
+                                    📹 Reunião Online Disponível
+                                </p>
+                                <a
+                                    href={selectedMeeting.teams_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn"
+                                    style={{
+                                        background: '#5b5fc7',
+                                        color: 'white',
+                                        padding: '10px 24px',
+                                        borderRadius: 'var(--radius-md)',
+                                        textDecoration: 'none',
+                                        fontWeight: 'bold',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '8px'
+                                    }}
+                                >
+                                    🎥 Entrar pelo Teams
+                                </a>
+                            </div>
+                        )}
                     </div>
                 )}
             </Modal>

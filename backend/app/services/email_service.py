@@ -73,7 +73,8 @@ class EmailService:
         organizer_name: str,
         organizer_email: str,
         confirmation_token: str,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        teams_link: Optional[str] = None
     ) -> bool:
         """Envia convite de reunião por e-mail."""
         
@@ -122,6 +123,8 @@ class EmailService:
                         </a>
                     </div>
                     
+                    {f'<div style="text-align: center; margin: 20px 0; padding: 15px; background: #eef2ff; border-radius: 8px;"><p style="margin: 0 0 10px; color: #4338ca; font-weight: bold;">📹 Reunião Online Disponível</p><a href="{teams_link}" style="display: inline-block; background: #5b5fc7; color: white; padding: 14px 30px; border-radius: 8px; text-decoration: none; font-weight: bold;">🎥 Entrar pelo Teams</a></div>' if teams_link else ''}
+                    
                     <p style="color: #666; font-size: 13px; margin-top: 20px;">Em caso de dúvidas, entre em contato com o organizador.</p>
                 </div>
                 <div style="background: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px;">
@@ -144,6 +147,7 @@ Organizador: {organizer_name} ({organizer_email})
 
 Para ACEITAR: {accept_url}
 Para RECUSAR: {decline_url}
+{f'Entrar pelo Teams: {teams_link}' if teams_link else ''}
 """
         
         return await self.send_email(to_email, subject, html_body, text_body)
