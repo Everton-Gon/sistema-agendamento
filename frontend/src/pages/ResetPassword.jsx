@@ -1,3 +1,28 @@
+/**
+ * =============================================================
+ *   ResetPassword.jsx — Página de redefinição de senha
+ * =============================================================
+ *   Responsável por:
+ *   - Permitir ao usuário definir uma nova senha
+ *   - Validar token recebido por email (query string ?token=...)
+ *   - Exibir tela de erro se token inválido ou expirado
+ *   - Exibir tela de sucesso após redefinição
+ *   - Redirecionar para login após 3 segundos
+ *   
+ *   Fluxo:
+ *   1. Usuário clica no link recebido por email
+ *   2. URL contém: /reset-password?token=abc123
+ *   3. Usuário digita nova senha + confirmação
+ *   4. Sistema envia POST /api/auth/reset-password { token, new_password }
+ *   5. Tela de sucesso + redirecionamento automático para login
+ *   
+ *   Estados possíveis:
+ *   - Token inválido → tela de erro com link para solicitar novo
+ *   - Sucesso → tela de confirmação + redirecionamento
+ *   - Formulário → campos de nova senha + confirmação
+ * =============================================================
+ */
+
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../services/api'
@@ -6,33 +31,45 @@ import { Lock, ArrowLeft, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-r
 function ResetPassword() {
     const [searchParams] = useSearchParams()
     const navigate = useNavigate()
-    const token = searchParams.get('token')
+    const token = searchParams.get('token')  // Token de reset extraído da URL
 
+    // Estado do formulário
     const [formData, setFormData] = useState({
         password: '',
         confirmPassword: ''
     })
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
-    const [success, setSuccess] = useState(false)
-    const [showPassword, setShowPassword] = useState(false)
-    const [tokenValid, setTokenValid] = useState(true)
+    const [loading, setLoading] = useState(false)       // Indica requisição em andamento
+    const [error, setError] = useState('')               // Mensagem de erro
+    const [success, setSuccess] = useState(false)        // Controla tela de sucesso
+    const [showPassword, setShowPassword] = useState(false)  // Toggle mostrar/ocultar senha
+    const [tokenValid, setTokenValid] = useState(true)   // Token é válido?
 
+    // Verifica se o token existe na URL ao carregar a página
     useEffect(() => {
         if (!token) {
-            setTokenValid(false)
+            setTokenValid(false)  // Sem token → tela de erro
         }
     }, [token])
 
+    /**
+     * Submete a nova senha.
+     * 1. Valida tamanho mínimo (6 caracteres)
+     * 2. Verifica se senhas coincidem
+     * 3. Envia POST /api/auth/reset-password com token + nova senha
+     * 4. Em caso de token expirado, mostra tela de erro
+     * 5. Em caso de sucesso, redireciona para login após 3 segundos
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
 
+        // Validação: tamanho mínimo
         if (formData.password.length < 6) {
             setError('A senha deve ter pelo menos 6 caracteres')
             return
         }
 
+        // Validação: senhas coincidem
         if (formData.password !== formData.confirmPassword) {
             setError('As senhas não coincidem')
             return
@@ -45,14 +82,15 @@ function ResetPassword() {
                 new_password: formData.password
             })
             setSuccess(true)
-            // Redireciona para login após 3 segundos
+
+            // Redireciona automaticamente para login após 3 segundos
             setTimeout(() => {
                 navigate('/login')
             }, 3000)
         } catch (err) {
             const detail = err.response?.data?.detail
             if (detail === 'Token inválido ou expirado') {
-                setTokenValid(false)
+                setTokenValid(false)  // Muda para tela de token inválido
             } else {
                 setError(detail || 'Erro ao redefinir senha. Tente novamente.')
             }
@@ -61,7 +99,7 @@ function ResetPassword() {
         }
     }
 
-    // Token inválido ou expirado
+    // === ESTADO 1: Token inválido ou expirado ===
     if (!tokenValid) {
         return (
             <div style={{
@@ -79,6 +117,7 @@ function ResetPassword() {
                     backgroundColor: 'white',
                     textAlign: 'center'
                 }}>
+                    {/* Ícone de erro (círculo vermelho) */}
                     <div style={{
                         width: '80px',
                         height: '80px',
@@ -95,6 +134,7 @@ function ResetPassword() {
                     <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-lg)' }}>
                         Este link de recuperação de senha é inválido ou já expirou.
                     </p>
+                    {/* Botão para solicitar novo link */}
                     <Link to="/forgot-password" className="btn btn-primary" style={{ width: '100%', marginBottom: 'var(--space-sm)' }}>
                         Solicitar Novo Link
                     </Link>
@@ -107,7 +147,7 @@ function ResetPassword() {
         )
     }
 
-    // Sucesso
+    // === ESTADO 2: Senha redefinida com sucesso ===
     if (success) {
         return (
             <div style={{
@@ -125,6 +165,7 @@ function ResetPassword() {
                     backgroundColor: 'white',
                     textAlign: 'center'
                 }}>
+                    {/* Ícone de sucesso (check verde) */}
                     <div style={{
                         width: '80px',
                         height: '80px',
@@ -149,6 +190,7 @@ function ResetPassword() {
         )
     }
 
+    // === ESTADO 3: Formulário de redefinição de senha ===
     return (
         <div style={{
             minHeight: '100vh',
@@ -164,6 +206,7 @@ function ResetPassword() {
                 padding: 'var(--space-2xl)',
                 backgroundColor: 'white'
             }}>
+                {/* Cabeçalho: ícone de cadeado + título */}
                 <div style={{ textAlign: 'center', marginBottom: 'var(--space-2xl)' }}>
                     <div style={{
                         width: '80px',
@@ -185,6 +228,7 @@ function ResetPassword() {
                 </div>
 
                 <form onSubmit={handleSubmit}>
+                    {/* Campo: Nova senha (com toggle mostrar/ocultar) */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                         <label className="input-label">
                             <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -200,6 +244,7 @@ function ResetPassword() {
                                 required
                                 style={{ paddingRight: '40px' }}
                             />
+                            {/* Botão olho — alterna visibilidade da senha */}
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -219,6 +264,7 @@ function ResetPassword() {
                         </div>
                     </div>
 
+                    {/* Campo: Confirmar nova senha */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
                         <label className="input-label">
                             <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -234,6 +280,7 @@ function ResetPassword() {
                         />
                     </div>
 
+                    {/* Mensagem de erro */}
                     {error && (
                         <div style={{
                             padding: 'var(--space-md)',
@@ -247,6 +294,7 @@ function ResetPassword() {
                         </div>
                     )}
 
+                    {/* Botão de submit */}
                     <button
                         type="submit"
                         className="btn btn-primary btn-lg"
@@ -266,6 +314,7 @@ function ResetPassword() {
                         )}
                     </button>
 
+                    {/* Botão para voltar ao login */}
                     <Link
                         to="/login"
                         className="btn btn-secondary"

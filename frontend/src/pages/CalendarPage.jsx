@@ -1,4 +1,25 @@
-import { useState, useEffect } from 'react'
+/**
+ * =============================================================
+ *   CalendarPage.jsx — Página do calendário mensal
+ * =============================================================
+ *   Responsável por:
+ *   - Exibir o componente Calendar com eventos de todas as salas
+ *   - Carregar eventos e salas do backend (Promise.all)
+ *   - Abrir modal com detalhes ao clicar em um evento
+ *   - Navegar para "Nova Reunião" ao clicar em um dia
+ *   - Exibir link do Teams quando disponível
+ *   
+ *   Interações:
+ *   - Clicar em um DIA → navega para /new-meeting com a data selecionada
+ *   - Clicar em um EVENTO → abre modal com detalhes da reunião
+ *   
+ *   Dados carregados:
+ *   - Eventos via meetingService.getCalendarEvents(start, end)
+ *   - Salas via roomService.getRooms() (para legenda de cores)
+ * =============================================================
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Calendar from '../components/Calendar/Calendar'
 import Modal from '../components/Common/Modal'
@@ -10,29 +31,25 @@ import { Clock, Building2, Users, User, X } from 'lucide-react'
 
 function CalendarPage() {
     const navigate = useNavigate()
-    const [events, setEvents] = useState([])
-    const [rooms, setRooms] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [selectedEvent, setSelectedEvent] = useState(null)
-    const [currentMonth, setCurrentMonth] = useState(new Date())
+    const [events, setEvents] = useState([])            // Eventos do calendário
+    const [rooms, setRooms] = useState([])              // Salas (para legenda de cores)
+    const [loading, setLoading] = useState(true)         // Carregamento inicial
+    const [selectedEvent, setSelectedEvent] = useState(null) // Evento selecionado no modal
+    const [currentMonth, setCurrentMonth] = useState(new Date()) // Mês sendo exibido
 
+    // Recarrega dados quando o mês muda (navegação do Calendar)
     useEffect(() => {
         loadData()
     }, [currentMonth])
 
+    /**
+     * Carrega eventos e salas em paralelo.
+     * Busca eventos do mês atual + próximo (para exibir corretamente).
+     */
     async function loadData() {
         try {
             setLoading(true)
-            const start = startOfMonth(currentMonth)
-            const end = endOfMonth(addMonths(currentMonth, 1))
-
-            const [eventsData, roomsData] = await Promise.all([
-                meetingService.getCalendarEvents(start, end),
-                roomService.getRooms()
-            ])
-
-            setEvents(eventsData)
-            setRooms(roomsData)
+            await fetchCalendarData()
         } catch (error) {
             console.error('Error loading calendar data:', error)
         } finally {
@@ -40,14 +57,59 @@ function CalendarPage() {
         }
     }
 
-    const handleDayClick = (date) => {
-        navigate('/new-meeting', { state: { selectedDate: date } })
+    /**
+     * Recarrega os dados silenciosamente (sem mostrar spinner).
+     * Usada pelo auto-refresh de 10s e pelo botão "Atualizar".
+     */
+    const silentRefresh = useCallback(async () => {
+        try {
+            await fetchCalendarData()
+        } catch (error) {
+            console.error('Error refreshing calendar data:', error)
+        }
+    }, [currentMonth])
+
+    /**
+     * Função compartilhada que busca eventos e salas.
+     */
+    async function fetchCalendarData() {
+        const start = startOfMonth(currentMonth)
+        const end = endOfMonth(addMonths(currentMonth, 1))
+
+        const [eventsData, roomsData] = await Promise.all([
+            meetingService.getCalendarEvents(start, end),
+            roomService.getRooms()
+        ])
+
+        setEvents(eventsData)
+        setRooms(roomsData)
     }
 
+    // Auto-refresh a cada 10 segundos (sem mostrar spinner)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            silentRefresh()
+        }, 10000)  // 10 segundos
+
+        return () => clearInterval(interval)  // Limpa ao desmontar
+    }, [silentRefresh])
+
+    /**
+     * Ao clicar em um dia do calendário:
+     * Navega para a página de "Nova Reunião" com a data pré-selecionada.
+     * Converte o objeto Date para string 'yyyy-MM-dd' para evitar erros no NewMeeting.
+     */
+    const handleDayClick = (date) => {
+        const dateStr = format(date, 'yyyy-MM-dd')
+        navigate('/new-meeting', { state: { selectedDate: dateStr } })
+    }
+
+    /** Ao clicar em um evento: abre o modal de detalhes */
     const handleEventClick = (event) => {
         setSelectedEvent(event)
     }
 
+    // Tela de carregamento
     if (loading) {
         return (
             <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
@@ -58,6 +120,7 @@ function CalendarPage() {
 
     return (
         <div>
+            {/* Cabeçalho da página */}
             <div style={{ marginBottom: 'var(--space-lg)' }}>
                 <h1>Calendário</h1>
                 <p style={{ color: 'var(--text-secondary)' }}>
@@ -65,14 +128,16 @@ function CalendarPage() {
                 </p>
             </div>
 
+            {/* Componente Calendar — grade mensal com eventos */}
             <Calendar
                 events={events}
                 rooms={rooms}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
+                onRefresh={silentRefresh}
             />
 
-            {/* Event Detail Modal */}
+            {/* === MODAL DE DETALHES DO EVENTO === */}
             <Modal
                 isOpen={!!selectedEvent}
                 onClose={() => setSelectedEvent(null)}
@@ -85,6 +150,7 @@ function CalendarPage() {
             >
                 {selectedEvent && (
                     <div className="flex flex-col gap-lg">
+                        {/* Título + badge da sala */}
                         <div>
                             <h3 style={{ marginBottom: 'var(--space-sm)' }}>{selectedEvent.title}</h3>
                             <span
@@ -98,7 +164,9 @@ function CalendarPage() {
                             </span>
                         </div>
 
+                        {/* Informações: data/hora, sala, organizador */}
                         <div className="flex flex-col gap-md">
+                            {/* Data e horário */}
                             <div className="flex items-center gap-md">
                                 <Clock size={20} style={{ color: 'var(--text-secondary)' }} />
                                 <div>
@@ -111,6 +179,7 @@ function CalendarPage() {
                                 </div>
                             </div>
 
+                            {/* Sala */}
                             <div className="flex items-center gap-md">
                                 <Building2 size={20} style={{ color: 'var(--text-secondary)' }} />
                                 <div>
@@ -118,6 +187,7 @@ function CalendarPage() {
                                 </div>
                             </div>
 
+                            {/* Organizador */}
                             <div className="flex items-center gap-md">
                                 <User size={20} style={{ color: 'var(--text-secondary)' }} />
                                 <div>
@@ -129,6 +199,7 @@ function CalendarPage() {
                             </div>
                         </div>
 
+                        {/* Indicador: "Esta é sua reunião" */}
                         {selectedEvent.is_own_meeting && (
                             <div style={{
                                 padding: 'var(--space-md)',
@@ -142,6 +213,7 @@ function CalendarPage() {
                             </div>
                         )}
 
+                        {/* Botão "Entrar pelo Teams" — se reunião tem link */}
                         {selectedEvent.teams_link && (
                             <div style={{
                                 padding: 'var(--space-md)',

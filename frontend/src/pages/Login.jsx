@@ -1,3 +1,23 @@
+/**
+ * =============================================================
+ *   Login.jsx — Página de login da aplicação
+ * =============================================================
+ *   Responsável por:
+ *   - Autenticar o usuário via email/senha
+ *   - Exibir painel esquerdo com features do sistema
+ *   - Exibir formulário de login no painel direito
+ *   - Redirecionar para Dashboard após login bem-sucedido
+ *   - Links para "Esqueci minha senha" e "Criar conta"
+ *   
+ *   Layout (split-screen):
+ *   ┌──────────────────┬──────────────────┐
+ *   │  Features do     │  Formulário de   │
+ *   │  Sistema         │  Login           │
+ *   │  (fundo laranja) │  (fundo branco)  │
+ *   └──────────────────┴──────────────────┘
+ * =============================================================
+ */
+
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -5,18 +25,29 @@ import { Calendar, Users, Clock, Shield, Mail, Lock, ArrowRight } from 'lucide-r
 
 function Login() {
     const navigate = useNavigate()
-    const { login } = useAuth()
+    const { login, loginMicrosoft } = useAuth()
+
+    // Estado do formulário (email + senha)
     const [formData, setFormData] = useState({
         email: '',
         password: ''
     })
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(false)       // Indica requisição em andamento
+    const [msLoading, setMsLoading] = useState(false)   // Indica login Microsoft em andamento
+    const [error, setError] = useState('')              // Mensagem de erro para o usuário
 
+    /**
+     * Submete o formulário de login.
+     * 1. Valida campos obrigatórios
+     * 2. Chama login() do AuthContext (POST /api/auth/login)
+     * 3. Redireciona para "/" (Dashboard) em caso de sucesso
+     * 4. Exibe mensagem de erro do backend em caso de falha
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
 
+        // Validação básica — campos obrigatórios
         if (!formData.email || !formData.password) {
             setError('Preencha todos os campos')
             return
@@ -25,14 +56,37 @@ function Login() {
         setLoading(true)
         try {
             await login(formData.email, formData.password)
-            navigate('/')
+            navigate('/')  // Sucesso → redireciona para Dashboard
         } catch (err) {
+            // Exibe mensagem do backend ou mensagem genérica
             setError(err.response?.data?.detail || 'E-mail ou senha incorretos')
         } finally {
             setLoading(false)
         }
     }
 
+    /**
+     * Inicia o fluxo de login com conta Microsoft.
+     * Abre o popup de autenticação da Microsoft e redireciona ao Dashboard.
+     */
+    const handleMicrosoftLogin = async () => {
+        setError('')
+        setMsLoading(true)
+        try {
+            await loginMicrosoft()
+            navigate('/')  // Sucesso → redireciona para Dashboard
+        } catch (err) {
+            if (err?.message?.includes('user_cancelled') || err?.errorCode === 'user_cancelled') {
+                // Usuário fechou o popup — não exibe erro
+                return
+            }
+            setError(err.response?.data?.detail || 'Erro ao conectar com a Microsoft. Tente novamente.')
+        } finally {
+            setMsLoading(false)
+        }
+    }
+
+    // Lista de features exibidas no painel esquerdo (marketing)
     const features = [
         { icon: Calendar, title: 'Calendário Integrado', description: 'Visualize todas as reuniões em um calendário intuitivo' },
         { icon: Users, title: '6 Salas Disponíveis', description: 'Escolha entre 6 salas de reunião equipadas' },
@@ -49,14 +103,15 @@ function Login() {
             justifyContent: 'center',
             padding: 'var(--space-lg)'
         }}>
-            <div className="card card-glass" style={{
+            {/* Card principal com layout em 2 colunas (split-screen) */}
+            <div className="card card-glass login-container" style={{
                 maxWidth: '900px',
                 width: '100%',
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
                 overflow: 'hidden'
             }}>
-                {/* Left side - Features */}
+                {/* === PAINEL ESQUERDO: Features do sistema === */}
                 <div style={{
                     background: 'linear-gradient(135deg, rgba(241, 168, 99, 0.9), rgba(246, 161, 92, 0.9))',
                     padding: 'var(--space-2xl)',
@@ -73,6 +128,7 @@ function Login() {
                         Gerencie suas reuniões de forma simples e eficiente
                     </p>
 
+                    {/* Lista de features com ícones */}
                     <div className="flex flex-col gap-lg">
                         {features.map((feature, index) => (
                             <div key={index} className="flex items-center gap-md">
@@ -97,7 +153,7 @@ function Login() {
                     </div>
                 </div>
 
-                {/* Right side - Login Form */}
+                {/* === PAINEL DIREITO: Formulário de Login === */}
                 <div style={{
                     padding: 'var(--space-2xl)',
                     display: 'flex',
@@ -105,6 +161,7 @@ function Login() {
                     justifyContent: 'center',
                     backgroundColor: 'white'
                 }}>
+                    {/* Cabeçalho com ícone e mensagem de boas-vindas */}
                     <div style={{ textAlign: 'center', marginBottom: 'var(--space-2xl)' }}>
                         <div style={{
                             width: '80px',
@@ -125,8 +182,10 @@ function Login() {
                         </p>
                     </div>
 
+                    {/* Formulário de login */}
                     <form onSubmit={handleSubmit}>
-                        <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
+                        {/* Campo: E-mail */}
+                        {/* <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                             <label className="input-label">
                                 <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} />
                                 E-mail
@@ -139,9 +198,10 @@ function Login() {
                                 placeholder="seu.email@empresa.com"
                                 required
                             />
-                        </div>
+                        </div> */}
 
-                        <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
+                        {/* Campo: Senha */}
+                        {/* <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
                             <label className="input-label">
                                 <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
                                 Senha
@@ -154,8 +214,9 @@ function Login() {
                                 placeholder="Sua senha"
                                 required
                             />
-                        </div>
+                        </div> */}
 
+                        {/* Mensagem de erro — exibida condicionalmente */}
                         {error && (
                             <div style={{
                                 padding: 'var(--space-md)',
@@ -169,7 +230,8 @@ function Login() {
                             </div>
                         )}
 
-                        <button
+                        {/* Botão de submit — mostra spinner durante carregamento */}
+                        {/* <button
                             type="submit"
                             className="btn btn-primary btn-lg"
                             disabled={loading}
@@ -186,9 +248,10 @@ function Login() {
                                     <ArrowRight size={18} />
                                 </>
                             )}
-                        </button>
+                        </button> */}
 
-                        <div style={{ textAlign: 'center', marginBottom: 'var(--space-md)' }}>
+                        {/* Link para recuperação de senha */}
+                        {/* <div style={{ textAlign: 'center', marginBottom: 'var(--space-md)' }}>
                             <Link
                                 to="/forgot-password"
                                 style={{
@@ -199,9 +262,62 @@ function Login() {
                             >
                                 Esqueci minha senha
                             </Link>
-                        </div>
+                        </div> */}
 
-                        <p style={{
+                        {/* Separador visual entre os métodos de login */}
+                        {/* <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--space-md)',
+                            margin: 'var(--space-md) 0'
+                        }}>
+                            <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color, #e5e7eb)' }} />
+                            <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>ou</span>
+                            <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-color, #e5e7eb)' }} />
+                        </div> */}
+
+                        {/* Botão: Entrar com Microsoft */}
+                        <button
+                            type="button"
+                            onClick={handleMicrosoftLogin}
+                            disabled={msLoading || loading}
+                            style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 'var(--space-sm)',
+                                padding: '10px var(--space-lg)',
+                                border: '1.5px solid #d1d5db',
+                                borderRadius: 'var(--radius-md)',
+                                backgroundColor: 'white',
+                                color: '#374151',
+                                fontSize: 'var(--font-size-sm)',
+                                fontWeight: 500,
+                                cursor: msLoading || loading ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s ease',
+                                marginBottom: 'var(--space-md)',
+                                opacity: msLoading || loading ? 0.7 : 1,
+                            }}
+                            onMouseEnter={e => { if (!msLoading && !loading) e.currentTarget.style.backgroundColor = '#f9fafb' }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white' }}
+                        >
+                            {msLoading ? (
+                                <div className="spinner spinner-sm" />
+                            ) : (
+                                /* Logo oficial da Microsoft */
+                                <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+                                    <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+                                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+                                    <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+                                </svg>
+                            )}
+                            {msLoading ? 'Conectando...' : 'Entrar com Microsoft'}
+                        </button>
+
+                        {/* Link para criação de conta */}
+                        {/* <p style={{
                             textAlign: 'center',
                             fontSize: 'var(--font-size-sm)',
                             color: 'var(--text-secondary)'
@@ -210,7 +326,7 @@ function Login() {
                             <Link to="/register" style={{ color: 'var(--primary-600)', fontWeight: 500 }}>
                                 Criar conta
                             </Link>
-                        </p>
+                        </p> */}
                     </form>
                 </div>
             </div>

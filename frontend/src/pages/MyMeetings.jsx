@@ -1,3 +1,21 @@
+/**
+ * =============================================================
+ *   MyMeetings.jsx — Página de "Minhas Reuniões"
+ * =============================================================
+ *   Responsável por:
+ *   - Listar todas as reuniões do usuário logado
+ *   - Filtrar por: Próximas, Passadas ou Todas
+ *   - Exibir detalhes de cada reunião em modal
+ *   - Permitir cancelamento com confirmação
+ *   - Exibir link do Teams quando disponível
+ *   
+ *   Filtros:
+ *   - "Próximas" → data >= agora
+ *   - "Passadas" → data < agora
+ *   - "Todas" → sem filtro
+ * =============================================================
+ */
+
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { meetingService } from '../services/meetingService'
@@ -17,18 +35,22 @@ import {
 
 function MyMeetings() {
     const location = useLocation()
-    const [meetings, setMeetings] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [filter, setFilter] = useState('upcoming') // 'upcoming', 'past', 'all'
-    const [selectedMeeting, setSelectedMeeting] = useState(null)
-    const [confirmDelete, setConfirmDelete] = useState(null)
-    const [deleting, setDeleting] = useState(false)
-    const [successMessage, setSuccessMessage] = useState(location.state?.success || null)
 
+    // === Estados de dados e controle de UI ===
+    const [meetings, setMeetings] = useState([])            // Todas as reuniões do usuário
+    const [loading, setLoading] = useState(true)              // Indicador de carregamento
+    const [filter, setFilter] = useState('upcoming')          // Filtro ativo: 'upcoming' | 'past' | 'all'
+    const [selectedMeeting, setSelectedMeeting] = useState(null) // Reunião aberta no modal de detalhes
+    const [confirmDelete, setConfirmDelete] = useState(null)   // Reunião no modal de confirmação
+    const [deleting, setDeleting] = useState(false)            // Indica cancelamento em andamento
+    const [successMessage, setSuccessMessage] = useState(location.state?.success || null) // Mensagem do router
+
+    // Carrega reuniões ao montar o componente
     useEffect(() => {
         loadMeetings()
     }, [])
 
+    // Limpa mensagem de sucesso automaticamente após 5 segundos
     useEffect(() => {
         if (successMessage) {
             const timer = setTimeout(() => setSuccessMessage(null), 5000)
@@ -36,6 +58,7 @@ function MyMeetings() {
         }
     }, [successMessage])
 
+    /** Busca todas as reuniões do usuário logado via API */
     async function loadMeetings() {
         try {
             setLoading(true)
@@ -48,15 +71,25 @@ function MyMeetings() {
         }
     }
 
+    /**
+     * Aplica filtro nas reuniões por status temporal.
+     * Compara a data da reunião com a data/hora atual.
+     */
     const filteredMeetings = meetings.filter(meeting => {
         const meetingDate = new Date(meeting.start_datetime)
         const now = new Date()
 
         if (filter === 'upcoming') return meetingDate >= now
         if (filter === 'past') return meetingDate < now
-        return true
+        return true  // 'all' → retorna todas
     })
 
+    /**
+     * Cancela uma reunião após confirmação.
+     * 1. Chama meetingService.cancelMeeting(id)
+     * 2. Remove da lista local (atualização otimista)
+     * 3. Fecha modal e exibe mensagem de sucesso
+     */
     const handleCancelMeeting = async () => {
         if (!confirmDelete) return
 
@@ -83,7 +116,7 @@ function MyMeetings() {
 
     return (
         <div>
-            {/* Success Message */}
+            {/* === MENSAGEM DE SUCESSO (ex: "Reunião cancelada") === */}
             {successMessage && (
                 <div style={{
                     padding: 'var(--space-md)',
@@ -116,7 +149,7 @@ function MyMeetings() {
                     </p>
                 </div>
 
-                {/* Filter Tabs */}
+                {/* Tabs de filtro: Próximas / Passadas / Todas */}
                 <div className="flex gap-sm">
                     {[
                         { key: 'upcoming', label: 'Próximas' },
@@ -134,7 +167,9 @@ function MyMeetings() {
                 </div>
             </div>
 
+            {/* === LISTA DE REUNIÕES ou ESTADO VAZIO === */}
             {filteredMeetings.length === 0 ? (
+                /* Estado vazio — sem reuniões no filtro selecionado */
                 <div className="card">
                     <div className="empty-state">
                         <Calendar size={64} style={{ color: 'var(--gray-300)', marginBottom: 'var(--space-lg)' }} />
@@ -149,6 +184,7 @@ function MyMeetings() {
                     </div>
                 </div>
             ) : (
+                /* Lista de cards de reuniões (clicável → abre modal de detalhes) */
                 <div className="flex flex-col gap-md">
                     {filteredMeetings.map(meeting => (
                         <div
@@ -221,7 +257,7 @@ function MyMeetings() {
                 </div>
             )}
 
-            {/* Meeting Detail Modal */}
+            {/* === MODAL: Detalhes da Reunião === */}
             <Modal
                 isOpen={!!selectedMeeting}
                 onClose={() => setSelectedMeeting(null)}
@@ -365,7 +401,7 @@ function MyMeetings() {
                 )}
             </Modal>
 
-            {/* Confirm Delete Modal */}
+            {/* === MODAL: Confirmação de Cancelamento === */}
             <Modal
                 isOpen={!!confirmDelete}
                 onClose={() => setConfirmDelete(null)}

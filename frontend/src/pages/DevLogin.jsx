@@ -1,3 +1,27 @@
+/**
+ * =============================================================
+ *   DevLogin.jsx — Login de desenvolvimento (sem Azure AD)
+ * =============================================================
+ *   Responsável por:
+ *   - Permitir login simplificado para desenvolvimento/testes
+ *   - Funciona quando Azure AD NÃO está configurado
+ *   - Aceita qualquer email/nome (sem validação de credenciais)
+ *   - Chama POST /api/auth/dev-login para obter token JWT
+ *   
+ *   IMPORTANTE:
+ *   - Este componente é usado apenas em modo de desenvolvimento
+ *   - Em produção, o login deve ser feito via Azure AD (Login.jsx)
+ *   - Exibe aviso visual amarelo indicando modo de desenvolvimento
+ *   
+ *   Fluxo:
+ *   1. Usuário digita email e nome
+ *   2. Sistema chama /api/auth/dev-login
+ *   3. Backend retorna token JWT sem verificar credenciais
+ *   4. Token é salvo no localStorage
+ *   5. Redireciona para "/" (Dashboard)
+ * =============================================================
+ */
+
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Calendar, User, Mail, ArrowRight } from 'lucide-react'
@@ -5,13 +29,22 @@ import api from '../services/api'
 
 function DevLogin() {
     const navigate = useNavigate()
+
+    // Estado do formulário (email + nome)
     const [formData, setFormData] = useState({
         email: '',
         name: ''
     })
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(false)    // Indica requisição em andamento
+    const [error, setError] = useState('')            // Mensagem de erro
 
+    /**
+     * Submete o formulário de login de desenvolvimento.
+     * 1. Envia dados para POST /api/auth/dev-login
+     * 2. Recebe token JWT sem autenticação real
+     * 3. Salva token no localStorage
+     * 4. Redireciona para Dashboard
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
@@ -20,10 +53,10 @@ function DevLogin() {
         try {
             const response = await api.post('/api/auth/dev-login', formData)
 
-            // Save token
+            // Salva token JWT no localStorage
             localStorage.setItem('token', response.data.access_token)
 
-            // Redirect to dashboard
+            // Redireciona para o dashboard
             navigate('/')
         } catch (err) {
             console.error('Login error:', err)
@@ -47,6 +80,7 @@ function DevLogin() {
                 width: '100%',
                 padding: 'var(--space-2xl)'
             }}>
+                {/* Cabeçalho: ícone + título + aviso de modo dev */}
                 <div style={{ textAlign: 'center', marginBottom: 'var(--space-2xl)' }}>
                     <div style={{
                         width: '80px',
@@ -65,6 +99,7 @@ function DevLogin() {
                     <p style={{ color: 'var(--text-secondary)' }}>
                         Entre com qualquer email para testar o sistema
                     </p>
+                    {/* Aviso visual: Azure AD não configurado */}
                     <div style={{
                         marginTop: 'var(--space-md)',
                         padding: 'var(--space-sm)',
@@ -77,7 +112,9 @@ function DevLogin() {
                     </div>
                 </div>
 
+                {/* Formulário simplificado (email + nome) */}
                 <form onSubmit={handleSubmit}>
+                    {/* Campo: Email */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                         <label className="input-label">
                             <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -93,6 +130,7 @@ function DevLogin() {
                         />
                     </div>
 
+                    {/* Campo: Nome */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
                         <label className="input-label">
                             <User size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -108,6 +146,7 @@ function DevLogin() {
                         />
                     </div>
 
+                    {/* Mensagem de erro */}
                     {error && (
                         <div style={{
                             padding: 'var(--space-md)',
@@ -121,6 +160,7 @@ function DevLogin() {
                         </div>
                     )}
 
+                    {/* Botão de submit */}
                     <button
                         type="submit"
                         className="btn btn-primary btn-lg w-full"
@@ -140,6 +180,7 @@ function DevLogin() {
                     </button>
                 </form>
 
+                {/* Dica: como ativar login Microsoft */}
                 <p style={{
                     marginTop: 'var(--space-lg)',
                     fontSize: 'var(--font-size-xs)',

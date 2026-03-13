@@ -1,3 +1,30 @@
+/**
+ * =============================================================
+ *   Dashboard.jsx — Página inicial (Dashboard)
+ * =============================================================
+ *   Responsável por:
+ *   - Exibir saudação personalizada (Bom dia/Boa tarde/Boa noite)
+ *   - Mostrar atalhos rápidos (Nova Reunião, Calendário, Salas)
+ *   - Exibir estatísticas: reuniões hoje, na semana, total de salas
+ *   - Listar reuniões de hoje e próximas reuniões
+ *   
+ *   Layout:
+ *   ┌──────────────────────────────────────────┐
+ *   │  Saudação + Data atual                   │
+ *   ├─────────────┬────────────┬───────────────┤
+ *   │ Nova Reunião│ Calendário │ Salas         │  ← Ações rápidas
+ *   ├─────────────┼────────────┼───────────────┤
+ *   │  Hoje: X    │ Semana: Y  │ Salas: Z      │  ← Estatísticas
+ *   ├─────────────────────┬────────────────────┤
+ *   │ Reuniões de Hoje    │ Próximas Reuniões  │  ← Listas
+ *   └─────────────────────┴────────────────────┘
+ *   
+ *   Dados carregados:
+ *   - Reuniões (hoje + semana) via meetingService.getMeetings()
+ *   - Salas via roomService.getRooms()
+ * =============================================================
+ */
+
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,38 +44,51 @@ import { ptBR } from 'date-fns/locale'
 
 function Dashboard() {
     const { user } = useAuth()
-    const [todayMeetings, setTodayMeetings] = useState([])
-    const [upcomingMeetings, setUpcomingMeetings] = useState([])
-    const [rooms, setRooms] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [stats, setStats] = useState({
-        today: 0,
-        week: 0,
-        rooms: 6
+
+    // Estados para dados do dashboard
+    const [todayMeetings, setTodayMeetings] = useState([])     // Reuniões de hoje
+    const [upcomingMeetings, setUpcomingMeetings] = useState([]) // Próximas 5 reuniões
+    const [rooms, setRooms] = useState([])                      // Lista de salas
+    const [loading, setLoading] = useState(true)                 // Carregamento inicial
+    const [stats, setStats] = useState({                         // Estatísticas resumidas
+        today: 0,    // Total de reuniões hoje
+        week: 0,     // Total de reuniões na semana
+        rooms: 6     // Total de salas (padrão: 6)
     })
 
+    // Carrega dados ao montar o componente
     useEffect(() => {
         loadDashboardData()
     }, [])
 
+    /**
+     * Carrega todos os dados do dashboard em uma única chamada.
+     * 1. Busca reuniões da semana (hoje até 7 dias)
+     * 2. Busca lista de salas
+     * 3. Filtra reuniões de hoje e próximas
+     * 4. Calcula estatísticas
+     */
     async function loadDashboardData() {
         try {
             const today = new Date()
             const weekEnd = addDays(today, 7)
 
-            // Usar formato ISO local
+            // Formato ISO local para consulta de reuniões
             const startStr = format(startOfDay(today), "yyyy-MM-dd'T'HH:mm:ss")
             const endStr = format(endOfDay(weekEnd), "yyyy-MM-dd'T'HH:mm:ss")
 
+            // Carrega reuniões e salas em paralelo
             const [meetingsData, roomsData] = await Promise.all([
                 meetingService.getMeetings(startStr, endStr),
                 roomService.getRooms()
             ])
 
+            // Filtra reuniões de hoje (compara apenas a data, sem horário)
             const todaysList = meetingsData.filter(m =>
                 format(new Date(m.start_datetime), 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
             )
 
+            // Filtra próximas reuniões (futuras, máximo 5)
             const upcomingList = meetingsData.filter(m =>
                 new Date(m.start_datetime) > today
             ).slice(0, 5)
@@ -68,6 +108,12 @@ function Dashboard() {
         }
     }
 
+    /**
+     * Retorna saudação baseada no horário atual.
+     * Manhã (antes 12h) → "Bom dia"
+     * Tarde (12h-18h) → "Boa tarde"
+     * Noite (após 18h) → "Boa noite"
+     */
     const getGreeting = () => {
         const hour = new Date().getHours()
         if (hour < 12) return 'Bom dia'
@@ -75,6 +121,7 @@ function Dashboard() {
         return 'Boa noite'
     }
 
+    // Tela de carregamento
     if (loading) {
         return (
             <div className="flex items-center justify-center" style={{ minHeight: '60vh' }}>
@@ -85,7 +132,7 @@ function Dashboard() {
 
     return (
         <div>
-            {/* Welcome Header */}
+            {/* === SAUDAÇÃO + DATA ATUAL === */}
             <div style={{ marginBottom: 'var(--space-2xl)' }}>
                 <h1 style={{ marginBottom: 'var(--space-xs)' }}>
                     {getGreeting()}, {user?.name?.split(' ')[0]}! 👋
@@ -95,13 +142,14 @@ function Dashboard() {
                 </p>
             </div>
 
-            {/* Quick Actions */}
+            {/* === AÇÕES RÁPIDAS (3 cards: Nova Reunião, Calendário, Salas) === */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: 'var(--space-lg)',
                 marginBottom: 'var(--space-2xl)'
             }}>
+                {/* Card: Nova Reunião (destaque com gradiente) */}
                 <Link to="/new-meeting" className="card" style={{
                     padding: 'var(--space-lg)',
                     display: 'flex',
@@ -128,6 +176,7 @@ function Dashboard() {
                     </div>
                 </Link>
 
+                {/* Card: Calendário */}
                 <Link to="/calendar" className="card" style={{
                     padding: 'var(--space-lg)',
                     display: 'flex',
@@ -153,6 +202,7 @@ function Dashboard() {
                     </div>
                 </Link>
 
+                {/* Card: Salas */}
                 <Link to="/rooms" className="card" style={{
                     padding: 'var(--space-lg)',
                     display: 'flex',
@@ -179,13 +229,14 @@ function Dashboard() {
                 </Link>
             </div>
 
-            {/* Stats */}
+            {/* === ESTATÍSTICAS (3 cards circulares) === */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
                 gap: 'var(--space-lg)',
                 marginBottom: 'var(--space-2xl)'
             }}>
+                {/* Estatística: Reuniões hoje */}
                 <div className="card" style={{ padding: 'var(--space-lg)', textAlign: 'center' }}>
                     <div style={{
                         width: '48px',
@@ -206,6 +257,7 @@ function Dashboard() {
                     </p>
                 </div>
 
+                {/* Estatística: Reuniões na semana */}
                 <div className="card" style={{ padding: 'var(--space-lg)', textAlign: 'center' }}>
                     <div style={{
                         width: '48px',
@@ -226,6 +278,7 @@ function Dashboard() {
                     </p>
                 </div>
 
+                {/* Estatística: Total de salas */}
                 <div className="card" style={{ padding: 'var(--space-lg)', textAlign: 'center' }}>
                     <div style={{
                         width: '48px',
@@ -247,13 +300,13 @@ function Dashboard() {
                 </div>
             </div>
 
-            {/* Today's Meetings & Upcoming */}
+            {/* === LISTAS: Reuniões de Hoje + Próximas Reuniões === */}
             <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
                 gap: 'var(--space-lg)'
             }}>
-                {/* Today's Meetings */}
+                {/* Card: Reuniões de Hoje */}
                 <div className="card">
                     <div className="card-header flex justify-between items-center">
                         <h3>Reuniões de Hoje</h3>
@@ -263,6 +316,7 @@ function Dashboard() {
                     </div>
                     <div className="card-body">
                         {todayMeetings.length === 0 ? (
+                            /* Estado vazio — sem reuniões hoje */
                             <div className="empty-state" style={{ padding: 'var(--space-lg)' }}>
                                 <Calendar size={48} style={{ color: 'var(--gray-300)', marginBottom: 'var(--space-md)' }} />
                                 <p style={{ color: 'var(--text-secondary)' }}>
@@ -270,6 +324,7 @@ function Dashboard() {
                                 </p>
                             </div>
                         ) : (
+                            /* Lista de reuniões de hoje */
                             <div className="flex flex-col gap-md">
                                 {todayMeetings.map(meeting => (
                                     <div key={meeting.id} style={{
@@ -301,13 +356,14 @@ function Dashboard() {
                     </div>
                 </div>
 
-                {/* Upcoming Meetings */}
+                {/* Card: Próximas Reuniões */}
                 <div className="card">
                     <div className="card-header flex justify-between items-center">
                         <h3>Próximas Reuniões</h3>
                     </div>
                     <div className="card-body">
                         {upcomingMeetings.length === 0 ? (
+                            /* Estado vazio — sem reuniões futuras */
                             <div className="empty-state" style={{ padding: 'var(--space-lg)' }}>
                                 <Clock size={48} style={{ color: 'var(--gray-300)', marginBottom: 'var(--space-md)' }} />
                                 <p style={{ color: 'var(--text-secondary)' }}>
@@ -315,6 +371,7 @@ function Dashboard() {
                                 </p>
                             </div>
                         ) : (
+                            /* Lista de próximas reuniões (máximo 5) */
                             <div className="flex flex-col gap-md">
                                 {upcomingMeetings.map(meeting => (
                                     <div key={meeting.id} style={{

@@ -1,36 +1,82 @@
-import { createContext, useContext, useState, useEffect } from 'react'
-import api from '../services/api'
+/**
+ * =============================================================
+ *   AuthContext.jsx — Contexto global de autenticação
+ * =============================================================
+ *   Responsável por:
+ *   - Gerenciar o estado de autenticação (logado/deslogado)
+ *   - Persistir sessão via localStorage (sobrevive a refresh)
+ *   - Expor funções login(), loginMicrosoft(), register() e logout()
+ *   - Fornecer dados do usuário logado (nome, email, tipo)
+ *   
+ *   Como usar em qualquer componente:
+ *   const { user, login, loginMicrosoft, logout, isAuthenticated } = useAuth()
+ * =============================================================
+ */
 
+import { createContext, useContext, useState, useEffect } from 'react'
+import { useMsal } from '@azure/msal-react'
+import { InteractionRequiredAuthError } from '@azure/msal-browser'
+import api from '../services/api'
+import { loginRequest } from '../services/authConfig'
+
+// Cria o contexto de autenticação (valor inicial: null)
 const AuthContext = createContext(null)
 
+/**
+ * AuthProvider — Provider que envolve toda a aplicação.
+ * Gerencia o estado de autenticação e expõe via Context API.
+ * 
+ * Estado:
+ * - user: dados do usuário logado (nome, email, tipo) ou null
+ * - loading: true enquanto verifica sessão salva no localStorage
+ * - isAuthenticated: true se há usuário logado
+ */
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null)
-    const [loading, setLoading] = useState(true)
-    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [user, setUser] = useState(null)              // Dados do usuário logado
+    const [loading, setLoading] = useState(true)         // Carregando sessão salva?
+    const [isAuthenticated, setIsAuthenticated] = useState(false)  // Está logado?
 
-    // Check for existing session on mount
+    // Instância do MSAL para interações com a Microsoft
+    const { instance: msalInstance } = useMsal()
+
+    /**
+     * Efeito executado ao montar o componente (apenas 1 vez).
+     * Verifica se há sessão salva no localStorage.
+     * Se houver, restaura o estado do usuário sem precisar logar novamente.
+     */
     useEffect(() => {
-        const savedUser = localStorage.getItem('user')
-        const savedToken = localStorage.getItem('token')
+        const savedUser = localStorage.getItem('user')    // Dados do usuário em JSON
+        const savedToken = localStorage.getItem('token')  // Token JWT
 
         if (savedUser && savedToken) {
             setUser(JSON.parse(savedUser))
             setIsAuthenticated(true)
         }
-        setLoading(false)
+        setLoading(false)  // Finaliza o carregamento (permite renderizar as rotas)
     }, [])
 
+    /**
+     * Faz login com email e senha.
+     * Envia credenciais ao backend, recebe token JWT e dados do usuário.
+     * Salva ambos no localStorage para persistir a sessão.
+     * 
+     * @param {string} email - Email do usuário
+     * @param {string} password - Senha do usuário
+     * @returns {Object} Dados do usuário logado
+     * @throws {Error} Se as credenciais estiverem incorretas
+     */
     const login = async (email, password) => {
         try {
             const response = await api.post('/api/auth/login', { email, password })
 
-            const userData = response.data.user
-            const token = response.data.access_token
+            const userData = response.data.user          // { id, name, email, tipo }
+            const token = response.data.access_token     // JWT token
 
-            // Save to localStorage
+            // Persiste no localStorage (sobrevive a refresh da página)
             localStorage.setItem('user', JSON.stringify(userData))
             localStorage.setItem('token', token)
 
+            // Atualiza o estado global
             setUser(userData)
             setIsAuthenticated(true)
 
@@ -41,6 +87,64 @@ export function AuthProvider({ children }) {
         }
     }
 
+    /**
+     * Faz login com a conta corporativa da Microsoft (SSO).
+     * 
+     * Fluxo:
+     * 1. Abre o popup de login da Microsoft (MSAL)
+     * 2. Recebe o access_token da Microsoft
+     * 3. Envia o token ao backend (POST /api/auth/microsoft)
+     * 4. Backend valida o token, cria usuário se necessário e retorna JWT próprio
+     * 5. Salva sessão no localStorage igual ao login normal
+     * 
+     * @returns {Object} Dados do usuário logado
+     * @throws {Error} Se o login falhar ou o usuário cancelar
+     */
+    const loginMicrosoft = async () => {
+        try {
+            // Passo 1: Abre o popup de login da Microsoft
+            const result = await msalInstance.loginPopup(loginRequest)
+
+            // Passo 2: Extrai o access_token retornado pela Microsoft
+            const microsoftToken = result.accessToken
+
+            // Passo 3: Envia token ao backend para validação e criação de sessão
+            const response = await api.post('/api/auth/microsoft', {
+                access_token: microsoftToken
+            })
+
+            const userData = response.data.user          // { id, name, email }
+            const token = response.data.access_token     // JWT próprio do sistema
+
+            // Passo 4: Persiste no localStorage (igual ao login normal)
+            localStorage.setItem('user', JSON.stringify(userData))
+            localStorage.setItem('token', token)
+
+            // Passo 5: Atualiza estado global do React
+            setUser(userData)
+            setIsAuthenticated(true)
+
+            return userData
+        } catch (error) {
+            // Ignora erros de interação (ex: usuário fechou o popup)
+            if (error instanceof InteractionRequiredAuthError) {
+                console.warn('Interação necessária para login Microsoft')
+            }
+            console.error('Microsoft login error:', error)
+            throw error
+        }
+    }
+
+    /**
+     * Registra um novo usuário.
+     * Cria a conta no backend e faz login automático.
+     * 
+     * @param {string} email - Email para cadastro
+     * @param {string} name - Nome completo
+     * @param {string} password - Senha escolhida
+     * @returns {Object} Dados do usuário criado
+     * @throws {Error} Se o email já está cadastrado ou dados inválidos
+     */
     const register = async (email, name, password) => {
         try {
             const response = await api.post('/api/auth/register', { email, name, password })
@@ -48,7 +152,7 @@ export function AuthProvider({ children }) {
             const userData = response.data.user
             const token = response.data.access_token
 
-            // Save to localStorage
+            // Salva sessão automaticamente após registro
             localStorage.setItem('user', JSON.stringify(userData))
             localStorage.setItem('token', token)
 
@@ -62,27 +166,44 @@ export function AuthProvider({ children }) {
         }
     }
 
+    /**
+     * Faz logout do usuário.
+     * Remove dados do localStorage e reseta o estado.
+     * O interceptor do Axios irá parar de enviar o token.
+     */
     const logout = () => {
-        localStorage.removeItem('user')
-        localStorage.removeItem('token')
+        localStorage.removeItem('user')    // Remove dados do usuário
+        localStorage.removeItem('token')   // Remove token JWT
         setUser(null)
         setIsAuthenticated(false)
     }
 
+    // Provê o contexto para todos os componentes filhos
     return (
         <AuthContext.Provider value={{
-            user,
-            loading,
-            isAuthenticated,
-            login,
-            register,
-            logout
+            user,              // Dados do usuário logado (ou null)
+            loading,           // true enquanto verifica sessão
+            isAuthenticated,   // true se logado
+            login,             // Função para fazer login com email/senha
+            loginMicrosoft,    // Função para fazer login com conta Microsoft
+            register,          // Função para registrar
+            logout             // Função para fazer logout
         }}>
             {children}
         </AuthContext.Provider>
     )
 }
 
+/**
+ * Hook customizado para acessar o contexto de autenticação.
+ * Deve ser usado dentro de um AuthProvider.
+ * 
+ * Exemplo de uso:
+ * const { user, login, loginMicrosoft, logout } = useAuth()
+ * 
+ * @returns {Object} { user, loading, isAuthenticated, login, loginMicrosoft, register, logout }
+ * @throws {Error} Se usado fora do AuthProvider
+ */
 export function useAuth() {
     const context = useContext(AuthContext)
     if (!context) {

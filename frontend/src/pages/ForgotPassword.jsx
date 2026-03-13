@@ -1,14 +1,37 @@
+/**
+ * =============================================================
+ *   ForgotPassword.jsx — Página de recuperação de senha
+ * =============================================================
+ *   Responsável por:
+ *   - Permitir ao usuário solicitar um link de recuperação de senha
+ *   - Enviar o email para o backend (POST /api/auth/forgot-password)
+ *   - Exibir tela de sucesso após envio bem-sucedido
+ *   - Links para retornar à tela de login
+ *   
+ *   Fluxo:
+ *   1. Usuário digita o email
+ *   2. Sistema envia link de recuperação por email
+ *   3. Tela muda para estado de "sucesso" confirmando o envio
+ *   4. Usuário verifica email e clica no link (→ ResetPassword.jsx)
+ * =============================================================
+ */
+
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../services/api'
 import { Mail, ArrowLeft, Send, CheckCircle } from 'lucide-react'
 
 function ForgotPassword() {
-    const [email, setEmail] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
-    const [success, setSuccess] = useState(false)
+    const [email, setEmail] = useState('')         // Email digitado pelo usuário
+    const [loading, setLoading] = useState(false)  // Indica requisição em andamento
+    const [error, setError] = useState('')          // Mensagem de erro
+    const [success, setSuccess] = useState(false)  // Controla exibição da tela de sucesso
 
+    /**
+     * Envia solicitação de recuperação de senha.
+     * Chama POST /api/auth/forgot-password com o email.
+     * Em caso de sucesso, muda para a tela de confirmação.
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
@@ -21,7 +44,7 @@ function ForgotPassword() {
         setLoading(true)
         try {
             await api.post('/api/auth/forgot-password', { email })
-            setSuccess(true)
+            setSuccess(true)  // Muda para tela de sucesso
         } catch (err) {
             setError(err.response?.data?.detail || 'Erro ao enviar e-mail. Tente novamente.')
         } finally {
@@ -29,6 +52,7 @@ function ForgotPassword() {
         }
     }
 
+    // === TELA DE SUCESSO — exibida após envio bem-sucedido ===
     if (success) {
         return (
             <div style={{
@@ -46,6 +70,7 @@ function ForgotPassword() {
                     backgroundColor: 'white',
                     textAlign: 'center'
                 }}>
+                    {/* Ícone de sucesso (check verde) */}
                     <div style={{
                         width: '80px',
                         height: '80px',
@@ -74,6 +99,7 @@ function ForgotPassword() {
         )
     }
 
+    // === TELA PRINCIPAL — formulário de recuperação ===
     return (
         <div style={{
             minHeight: '100vh',
@@ -89,6 +115,7 @@ function ForgotPassword() {
                 padding: 'var(--space-2xl)',
                 backgroundColor: 'white'
             }}>
+                {/* Cabeçalho: ícone de email + título */}
                 <div style={{ textAlign: 'center', marginBottom: 'var(--space-2xl)' }}>
                     <div style={{
                         width: '80px',
@@ -110,6 +137,7 @@ function ForgotPassword() {
                 </div>
 
                 <form onSubmit={handleSubmit}>
+                    {/* Campo: E-mail */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
                         <label className="input-label">
                             <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -125,6 +153,7 @@ function ForgotPassword() {
                         />
                     </div>
 
+                    {/* Mensagem de erro */}
                     {error && (
                         <div style={{
                             padding: 'var(--space-md)',
@@ -138,6 +167,7 @@ function ForgotPassword() {
                         </div>
                     )}
 
+                    {/* Botão de envio */}
                     <button
                         type="submit"
                         className="btn btn-primary btn-lg"
@@ -157,6 +187,7 @@ function ForgotPassword() {
                         )}
                     </button>
 
+                    {/* Botão para voltar ao login */}
                     <Link
                         to="/login"
                         className="btn btn-secondary"

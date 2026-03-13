@@ -1,3 +1,21 @@
+/**
+ * =============================================================
+ *   Register.jsx — Página de cadastro de novo usuário
+ * =============================================================
+ *   Responsável por:
+ *   - Cadastrar um novo usuário no sistema
+ *   - Validar campos obrigatórios e regras de senha
+ *   - Verificar se senhas coincidem antes de enviar
+ *   - Redirecionar para Dashboard após cadastro bem-sucedido
+ *   - Link para "Fazer login" caso já tenha conta
+ *   
+ *   Validações:
+ *   - Todos os campos obrigatórios preenchidos
+ *   - Senha com no mínimo 6 caracteres
+ *   - Confirmação de senha idêntica à senha
+ * =============================================================
+ */
+
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -6,29 +24,42 @@ import { Calendar, Mail, User, Lock, ArrowRight, UserPlus } from 'lucide-react'
 function Register() {
     const navigate = useNavigate()
     const { register } = useAuth()
+
+    // Estado do formulário com 4 campos
     const [formData, setFormData] = useState({
         email: '',
         name: '',
         password: '',
         confirmPassword: ''
     })
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(false)    // Indica requisição em andamento
+    const [error, setError] = useState('')            // Mensagem de erro para o usuário
 
+    /**
+     * Submete o formulário de cadastro.
+     * 1. Valida campos obrigatórios
+     * 2. Verifica tamanho mínimo da senha (6 caracteres)
+     * 3. Confirma que ambas as senhas são iguais
+     * 4. Chama register() do AuthContext (POST /api/auth/register)
+     * 5. Redireciona para "/" (Dashboard) em caso de sucesso
+     */
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
 
+        // Validação: campos obrigatórios
         if (!formData.email || !formData.name || !formData.password) {
             setError('Preencha todos os campos')
             return
         }
 
+        // Validação: tamanho mínimo da senha
         if (formData.password.length < 6) {
             setError('A senha deve ter pelo menos 6 caracteres')
             return
         }
 
+        // Validação: senhas coincidem
         if (formData.password !== formData.confirmPassword) {
             setError('As senhas não coincidem')
             return
@@ -37,7 +68,7 @@ function Register() {
         setLoading(true)
         try {
             await register(formData.email, formData.name, formData.password)
-            navigate('/')
+            navigate('/')  // Sucesso → redireciona para Dashboard
         } catch (err) {
             setError(err.response?.data?.detail || 'Erro ao criar conta. Tente novamente.')
         } finally {
@@ -54,12 +85,14 @@ function Register() {
             justifyContent: 'center',
             padding: 'var(--space-lg)'
         }}>
+            {/* Card centralizado com formulário de cadastro */}
             <div className="card" style={{
                 maxWidth: '450px',
                 width: '100%',
                 padding: 'var(--space-2xl)',
                 backgroundColor: 'white'
             }}>
+                {/* Cabeçalho: ícone + título */}
                 <div style={{ textAlign: 'center', marginBottom: 'var(--space-2xl)' }}>
                     <div style={{
                         width: '80px',
@@ -80,7 +113,9 @@ function Register() {
                     </p>
                 </div>
 
+                {/* Formulário de cadastro */}
                 <form onSubmit={handleSubmit}>
+                    {/* Campo: E-mail */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                         <label className="input-label">
                             <Mail size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -96,6 +131,7 @@ function Register() {
                         />
                     </div>
 
+                    {/* Campo: Nome completo */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                         <label className="input-label">
                             <User size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -111,6 +147,7 @@ function Register() {
                         />
                     </div>
 
+                    {/* Campo: Senha */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
                         <label className="input-label">
                             <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -126,6 +163,7 @@ function Register() {
                         />
                     </div>
 
+                    {/* Campo: Confirmar senha */}
                     <div className="input-group" style={{ marginBottom: 'var(--space-lg)' }}>
                         <label className="input-label">
                             <Lock size={14} style={{ display: 'inline', marginRight: '4px' }} />
@@ -141,6 +179,7 @@ function Register() {
                         />
                     </div>
 
+                    {/* Mensagem de erro — exibida condicionalmente */}
                     {error && (
                         <div style={{
                             padding: 'var(--space-md)',
@@ -154,6 +193,7 @@ function Register() {
                         </div>
                     )}
 
+                    {/* Botão de submit — mostra spinner durante carregamento */}
                     <button
                         type="submit"
                         className="btn btn-primary btn-lg"
@@ -173,6 +213,7 @@ function Register() {
                         )}
                     </button>
 
+                    {/* Link para login (se já tem conta) */}
                     <p style={{
                         textAlign: 'center',
                         fontSize: 'var(--font-size-sm)',

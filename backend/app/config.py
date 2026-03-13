@@ -1,48 +1,82 @@
+"""
+=============================================================
+  config.py — Configurações da aplicação
+=============================================================
+  Carrega variáveis de ambiente do arquivo .env usando Pydantic.
+  Cada variável aqui tem um valor padrão caso não esteja no .env.
+  
+  Para alterar configurações, edite o arquivo backend/.env
+=============================================================
+"""
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # MySQL
-    mysql_host: str = "localhost"
-    mysql_port: int = 3306
-    mysql_user: str = "root"
-    mysql_password: str = ""
-    mysql_database: str = "sistema_agendamento"
+    """
+    Classe de configurações do sistema.
+    Cada atributo corresponde a uma variável de ambiente no .env.
+    """
     
-    # JWT
-    jwt_secret_key: str = "sistema-agendamento-secret-key-2024"
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    # ==========================================
+    # MySQL — Configurações do banco de dados
+    # ==========================================
+    mysql_host: str = "localhost"              # Endereço do servidor MySQL
+    mysql_port: int = 3306                     # Porta padrão do MySQL
+    mysql_user: str = "root"                   # Usuário do banco
+    mysql_password: str = ""                   # Senha do banco
+    mysql_database: str = "sistema_agendamento"  # Nome do banco de dados
     
-    # Frontend - URLs permitidas para CORS (separadas por vírgula)
-    frontend_url: str = "http://localhost:5173"
-    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost:5174"
+    # ==========================================
+    # JWT — Autenticação por token
+    # ==========================================
+    jwt_secret_key: str = "sistema-agendamento-secret-key-2024"  # Chave para assinar tokens
+    jwt_algorithm: str = "HS256"               # Algoritmo de criptografia
+    access_token_expire_minutes: int = 60      # Token expira em 60 min
     
-    # SMTP (E-mail)
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    email_from: str = ""
-    email_from_name: str = "Sistema de Agendamento"
+    # ==========================================
+    # Frontend — URL para CORS e links de e-mail
+    # ==========================================
+    frontend_url: str = "http://localhost:5173"  # URL do frontend React
     
-    # Microsoft Azure / Teams
-    azure_client_id: str = ""
-    azure_tenant_id: str = ""
-    azure_client_secret: str = ""
-    azure_organizer_email: str = ""
+    # ==========================================
+    # SMTP — Configurações de envio de e-mail
+    # ==========================================
+    smtp_host: str = "smtp.gmail.com"          # Servidor SMTP (Gmail/Outlook)
+    smtp_port: int = 587                       # Porta TLS
+    smtp_user: str = ""                        # E-mail de envio
+    smtp_password: str = ""                    # Senha do e-mail
+    email_from: str = ""                       # Remetente (pode ser = smtp_user)
+    email_from_name: str = "Sistema de Agendamento"  # Nome exibido no e-mail
+    
+    # ==========================================
+    # Microsoft Azure / Teams — Integração
+    # ==========================================
+    azure_client_id: str = ""                  # ID da aplicação no Azure AD
+    azure_tenant_id: str = ""                  # ID do tenant (organização)
+    azure_client_secret: str = ""              # Chave secreta da aplicação
+    azure_organizer_email: str = ""            # E-mail do organizador (calendário)
     
     @property
     def database_url(self) -> str:
+        """
+        Monta a URL de conexão com MySQL no formato SQLAlchemy.
+        Usa o driver aiomysql para conexões assíncronas.
+        Exemplo: mysql+aiomysql://root:senha@localhost:3306/sistema_agendamento
+        """
         return f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
     
     class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
+        env_file = ".env"              # Arquivo de onde carregar as variáveis
+        env_file_encoding = "utf-8"    # Codificação do arquivo
+        extra = "ignore"               # Ignora variáveis extras no .env
 
 
 @lru_cache()
 def get_settings() -> Settings:
+    """
+    Retorna instância única das configurações (singleton).
+    O decorador @lru_cache garante que o .env é lido apenas uma vez.
+    """
     return Settings()
