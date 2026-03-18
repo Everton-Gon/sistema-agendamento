@@ -11,8 +11,9 @@
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from app.config import get_settings
 from app.database import init_db, close_db, get_db, Reuniao
 from app.routes import auth, rooms, meetings
@@ -121,14 +122,27 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",     # Vite dev server (frontend)
-        "http://localhost:3000",     # Alternativa (React CRA)
-        settings.frontend_url        # URL configurável via .env
+        "https://malloryapp.com.br",     # Frontend em produção
+        "http://localhost:5173",          # Vite dev server (desenvolvimento local)
+        "http://localhost:3000",          # Alternativa (React CRA)
+        settings.frontend_url             # URL configurável via .env
     ],
     allow_credentials=True,          # Permite envio de cookies/tokens
     allow_methods=["*"],             # Permite todos os métodos HTTP (GET, POST, etc.)
     allow_headers=["*"],             # Permite todos os headers (Authorization, etc.)
 )
+
+
+# =============================================
+# Middleware COOP — necessário para login Microsoft (popup)
+# =============================================
+# Sem esse header, o MSAL não consegue monitorar o popup do Azure AD
+# e o login fica bloqueado com erro de Cross-Origin-Opener-Policy.
+@app.middleware("http")
+async def add_coop_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    return response
 
 
 # =============================================
