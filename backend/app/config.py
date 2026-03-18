@@ -11,6 +11,7 @@
 
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 
 class Settings(BaseSettings):
@@ -65,7 +66,8 @@ class Settings(BaseSettings):
         Usa o driver aiomysql para conexões assíncronas.
         Exemplo: mysql+aiomysql://root:senha@localhost:3306/sistema_agendamento
         """
-        return f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+        password = quote_plus(self.mysql_password)  # Encode especialmente o @ e outros caracteres especiais
+        return f"mysql+aiomysql://{self.mysql_user}:{password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
     
     class Config:
         env_file = ".env"              # Arquivo de onde carregar as variáveis
