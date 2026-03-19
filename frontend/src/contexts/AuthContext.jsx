@@ -42,20 +42,38 @@ export function AuthProvider({ children }) {
     // Instância do MSAL para interações com a Microsoft
     const { instance: msalInstance } = useMsal()
 
-    /**
-     * Efeito executado ao montar o componente (apenas 1 vez).
-     * Verifica se há sessão salva no localStorage.
-     * Se houver, restaura o estado do usuário sem precisar logar novamente.
-     */
+    // Processa resultado do redirect da Microsoft (fluxo mobile)
+    const handleMicrosoftRedirectResult = useCallback(async () => {
+        try {
+            const result = await msalInstance.handleRedirectPromise()
+            if (!result) return // Nenhum redirect pendente
+
+            const microsoftToken = result.accessToken
+            const response = await api.post('/api/auth/microsoft', {
+                access_token: microsoftToken
+            })
+
+            const userData = response.data.user
+            const token = response.data.access_token
+
+            localStorage.setItem('user', JSON.stringify(userData))
+            localStorage.setItem('token', token)
+            setUser(userData)
+            setIsAuthenticated(true)
+        } catch (error) {
+            console.error('Microsoft redirect result error:', error)
+        }
+    }, [msalInstance])
+
     useEffect(() => {
-        const savedUser = localStorage.getItem('user')    // Dados do usuário em JSON
-        const savedToken = localStorage.getItem('token')  // Token JWT
+        const savedUser = localStorage.getItem('user')
+        const savedToken = localStorage.getItem('token')
 
         if (savedUser && savedToken) {
             setUser(JSON.parse(savedUser))
             setIsAuthenticated(true)
         }
-        setLoading(false)  // Finaliza o carregamento (permite renderizar as rotas)
+        setLoading(false)
 
         // Trata o resultado do redirect da Microsoft (fluxo mobile)
         handleMicrosoftRedirectResult()
@@ -106,28 +124,6 @@ export function AuthProvider({ children }) {
      * @returns {Object} Dados do usuário logado
      * @throws {Error} Se o login falhar ou o usuário cancelar
      */
-    // Processa resultado do redirect (mobile) após retorno da Microsoft
-    const handleMicrosoftRedirectResult = useCallback(async () => {
-        try {
-            const result = await msalInstance.handleRedirectPromise()
-            if (!result) return // Nenhum redirect pendente
-
-            const microsoftToken = result.accessToken
-            const response = await api.post('/api/auth/microsoft', {
-                access_token: microsoftToken
-            })
-
-            const userData = response.data.user
-            const token = response.data.access_token
-
-            localStorage.setItem('user', JSON.stringify(userData))
-            localStorage.setItem('token', token)
-            setUser(userData)
-            setIsAuthenticated(true)
-        } catch (error) {
-            console.error('Microsoft redirect result error:', error)
-        }
-    }, [msalInstance])
 
     const loginMicrosoft = async () => {
         try {
