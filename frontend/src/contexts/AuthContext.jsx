@@ -13,14 +13,11 @@
  * =============================================================
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import { useMsal } from '@azure/msal-react'
 import { InteractionRequiredAuthError } from '@azure/msal-browser'
 import api from '../services/api'
 import { loginRequest } from '../services/authConfig'
-
-// Detecta se o usuário está em dispositivo móvel
-const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
 
 // Cria o contexto de autenticação (valor inicial: null)
 const AuthContext = createContext(null)
@@ -42,29 +39,6 @@ export function AuthProvider({ children }) {
     // Instância do MSAL para interações com a Microsoft
     const { instance: msalInstance } = useMsal()
 
-    // Processa resultado do redirect da Microsoft (fluxo mobile)
-    const handleMicrosoftRedirectResult = useCallback(async () => {
-        try {
-            const result = await msalInstance.handleRedirectPromise()
-            if (!result) return // Nenhum redirect pendente
-
-            const microsoftToken = result.accessToken
-            const response = await api.post('/api/auth/microsoft', {
-                access_token: microsoftToken
-            })
-
-            const userData = response.data.user
-            const token = response.data.access_token
-
-            localStorage.setItem('user', JSON.stringify(userData))
-            localStorage.setItem('token', token)
-            setUser(userData)
-            setIsAuthenticated(true)
-        } catch (error) {
-            console.error('Microsoft redirect result error:', error)
-        }
-    }, [msalInstance])
-
     useEffect(() => {
         const savedUser = localStorage.getItem('user')
         const savedToken = localStorage.getItem('token')
@@ -74,10 +48,7 @@ export function AuthProvider({ children }) {
             setIsAuthenticated(true)
         }
         setLoading(false)
-
-        // Trata o resultado do redirect da Microsoft (fluxo mobile)
-        handleMicrosoftRedirectResult()
-    }, [handleMicrosoftRedirectResult])
+    }, [])
 
     /**
      * Faz login com email e senha.
@@ -127,13 +98,6 @@ export function AuthProvider({ children }) {
 
     const loginMicrosoft = async () => {
         try {
-            if (isMobile()) {
-                // Mobile: usa redirect (popup é bloqueado em browsers mobile)
-                await msalInstance.loginRedirect(loginRequest)
-                return // A página vai redirecionar; o resultado é tratado em handleMicrosoftRedirectResult
-            }
-
-            // Desktop: usa popup
             const result = await msalInstance.loginPopup(loginRequest)
 
             const microsoftToken = result.accessToken
