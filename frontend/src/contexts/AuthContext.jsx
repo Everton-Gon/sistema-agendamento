@@ -13,11 +13,14 @@
  * =============================================================
  */
 
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useMsal } from '@azure/msal-react'
 import { InteractionRequiredAuthError } from '@azure/msal-browser'
 import api from '../services/api'
 import { loginRequest } from '../services/authConfig'
+
+// Detecta se o usuário está em dispositivo móvel
+const isMobile = () => /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
 
 // Cria o contexto de autenticação (valor inicial: null)
 const AuthContext = createContext(null)
@@ -53,7 +56,10 @@ export function AuthProvider({ children }) {
             setIsAuthenticated(true)
         }
         setLoading(false)  // Finaliza o carregamento (permite renderizar as rotas)
-    }, [])
+
+        // Trata o resultado do redirect da Microsoft (fluxo mobile)
+        handleMicrosoftRedirectResult()
+    }, [handleMicrosoftRedirectResult])
 
     /**
      * Faz login com email e senha.
@@ -100,33 +106,55 @@ export function AuthProvider({ children }) {
      * @returns {Object} Dados do usuário logado
      * @throws {Error} Se o login falhar ou o usuário cancelar
      */
-    const loginMicrosoft = async () => {
+    // Processa resultado do redirect (mobile) após retorno da Microsoft
+    const handleMicrosoftRedirectResult = useCallback(async () => {
         try {
-            // Passo 1: Abre o popup de login da Microsoft
-            const result = await msalInstance.loginPopup(loginRequest)
+            const result = await msalInstance.handleRedirectPromise()
+            if (!result) return // Nenhum redirect pendente
 
-            // Passo 2: Extrai o access_token retornado pela Microsoft
             const microsoftToken = result.accessToken
-
-            // Passo 3: Envia token ao backend para validação e criação de sessão
             const response = await api.post('/api/auth/microsoft', {
                 access_token: microsoftToken
             })
 
-            const userData = response.data.user          // { id, name, email }
-            const token = response.data.access_token     // JWT próprio do sistema
+            const userData = response.data.user
+            const token = response.data.access_token
 
-            // Passo 4: Persiste no localStorage (igual ao login normal)
             localStorage.setItem('user', JSON.stringify(userData))
             localStorage.setItem('token', token)
+            setUser(userData)
+            setIsAuthenticated(true)
+        } catch (error) {
+            console.error('Microsoft redirect result error:', error)
+        }
+    }, [msalInstance])
 
-            // Passo 5: Atualiza estado global do React
+    const loginMicrosoft = async () => {
+        try {
+            if (isMobile()) {
+                // Mobile: usa redirect (popup é bloqueado em browsers mobile)
+                await msalInstance.loginRedirect(loginRequest)
+                return // A página vai redirecionar; o resultado é tratado em handleMicrosoftRedirectResult
+            }
+
+            // Desktop: usa popup
+            const result = await msalInstance.loginPopup(loginRequest)
+
+            const microsoftToken = result.accessToken
+            const response = await api.post('/api/auth/microsoft', {
+                access_token: microsoftToken
+            })
+
+            const userData = response.data.user
+            const token = response.data.access_token
+
+            localStorage.setItem('user', JSON.stringify(userData))
+            localStorage.setItem('token', token)
             setUser(userData)
             setIsAuthenticated(true)
 
             return userData
         } catch (error) {
-            // Ignora erros de interação (ex: usuário fechou o popup)
             if (error instanceof InteractionRequiredAuthError) {
                 console.warn('Interação necessária para login Microsoft')
             }
