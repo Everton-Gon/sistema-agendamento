@@ -20,7 +20,7 @@ import { apiConfig } from '../config/msalConfig'
 // Cria instância do Axios com configuração base
 // Todas as chamadas usam JSON e apontam para o backend FastAPI
 const api = axios.create({
-    baseURL: apiConfig.baseUrl,   // Ex: http://localhost:8000
+    baseURL: apiConfig.baseUrl,   // Ex: https://malloryapp.com.br:8000
     headers: {
         'Content-Type': 'application/json'
     }

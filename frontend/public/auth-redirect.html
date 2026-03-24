@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Autenticando...</title>
+  </head>
+  <body>
+    <script>
+      // Essa página é aberta dentro do popup da Microsoft
+      // O MSAL da janela principal detecta o hash e processa o token
+      // Depois fecha o popup automaticamente
+      if (window.opener) {
+        // Envia o hash com o token de volta para a janela principal
+        window.opener.postMessage(window.location.hash, window.location.origin)
+      }
+    </script>
+  </body>
+</html>

@@ -30,7 +30,7 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { CheckCircle, XCircle, Calendar, Clock, Building2, User, AlertCircle, Loader } from 'lucide-react'
 
 // URL base do backend (para chamadas diretas com fetch)
-const API_BASE = 'http://localhost:8000'
+const API_BASE = 'https://backend.malloryapp.com.br'
 
 function MeetingResponse() {
     const [searchParams] = useSearchParams()

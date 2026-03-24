@@ -115,6 +115,10 @@ export function AuthProvider({ children }) {
 
             return userData
         } catch (error) {
+            if (error?.errorCode === 'interaction_in_progress') {
+                console.warn('Interação em progresso, tentando novamente...')
+                return loginMicrosoft()
+            }
             if (error instanceof InteractionRequiredAuthError) {
                 console.warn('Interação necessária para login Microsoft')
             }

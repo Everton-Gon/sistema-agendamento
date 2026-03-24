@@ -22,7 +22,7 @@ export const msalConfig = {
         authority: `https://login.microsoftonline.com/${import.meta.env.VITE_MICROSOFT_TENANT_ID}`,
 
         // URL para onde a Microsoft redireciona após o login bem-sucedido
-        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'http://localhost:5173/',
+        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://malloryapp.com.br/',
     },
     cache: {
         // Armazena o token da Microsoft no sessionStorage (mais seguro que localStorage)

@@ -253,7 +253,7 @@ class EmailService:
         """
         
         date_formatted = meeting_date.strftime("%d/%m/%Y")
-        frontend_url = getattr(settings, 'frontend_url', 'http://localhost:5173')
+        frontend_url = getattr(settings, 'frontend_url', 'https://malloryapp.com.br')
         
         # URLs de confirmação — abrem a página de detalhes no frontend
         # IMPORTANTE: NÃO incluir &response= na URL do e-mail.

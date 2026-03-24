@@ -789,6 +789,10 @@ async def create_meeting(
                 att.email for att in meeting_data.attendees
                 if att.email != organizer_email   # evita duplicidade se o organizador se convidar
             ]
+            # Inclui a sala como participante para aparecer no calendário da Microsoft
+            if sala.outlook_email and sala.outlook_email not in attendee_emails:
+                attendee_emails.append(sala.outlook_email)
+
             teams_result = await graph_service.create_calendar_event(
                 subject=meeting_data.title,
                 start=occ_start,
