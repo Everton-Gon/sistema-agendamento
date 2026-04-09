@@ -30,7 +30,10 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# Fuso horário de Brasília (UTC-3) — usado para normalizar datas do Outlook
+BRASILIA = timezone(timedelta(hours=-3))
 import secrets
 import uuid
 import json
@@ -49,6 +52,28 @@ public_router = APIRouter(prefix="/api/meeting-confirmation", tags=["meeting-con
 # Armazenamento temporário de tokens de confirmação por link direto
 # NOTA: Em produção, usar Redis ou banco de dados
 meeting_confirmation_tokens = {}
+
+
+def _to_brasilia_naive(dt_str: str) -> datetime | None:
+    """
+    Converte string de data do Outlook para datetime naive no horário de Brasília.
+
+    A Microsoft pode retornar horários em formatos variados:
+      - "2026-04-09T12:30:00Z"        → UTC com sufixo Z
+      - "2026-04-09T09:30:00-03:00"   → com offset explícito
+      - "2026-04-09T09:30:00"         → sem fuso (já naive)
+
+    Para comparar corretamente com horários do usuário (sempre BRT),
+    converte qualquer formato para BRT e então remove o tzinfo.
+    """
+    try:
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            # Converte para Brasília ANTES de remover o fuso
+            return dt.astimezone(BRASILIA).replace(tzinfo=None)
+        return dt  # já é naive — assume que está em BRT
+    except (ValueError, TypeError):
+        return None
 
 
 # =============================================
@@ -447,16 +472,19 @@ async def _find_available_rooms(
         has_outlook_conflict = False
         if r.outlook_email:
             try:
+                # Expande a janela em 3h para garantir captura de eventos deslocados
+                query_start = start_dt - timedelta(hours=3)
+                query_end = end_dt + timedelta(hours=3)
                 room_events = await graph_service.get_room_calendar_events(
-                    r.outlook_email, start_dt, end_dt
+                    r.outlook_email, query_start, query_end
                 )
                 for evt in room_events:
                     evt_s = evt.get("start", {}).get("dateTime", "")
                     evt_e = evt.get("end", {}).get("dateTime", "")
-                    try:
-                        es = datetime.fromisoformat(evt_s).replace(tzinfo=None)
-                        ee = datetime.fromisoformat(evt_e).replace(tzinfo=None)
-                    except (ValueError, TypeError):
+                    # Converte para BRT naive (trata "Z", offsets e naive corretamente)
+                    es = _to_brasilia_naive(evt_s)
+                    ee = _to_brasilia_naive(evt_e)
+                    if es is None or ee is None:
                         continue
                     # Normaliza start_dt/end_dt para naive (evita TypeError de fuso horário)
                     start_naive = start_dt.replace(tzinfo=None)
@@ -648,16 +676,19 @@ async def create_meeting(
     # === PASSO 4b: Verificar conflitos no calendário Outlook da SALA ===
     if sala.outlook_email:
         try:
+            # Expande a janela em 3h para garantir captura de eventos deslocados
+            query_start = start_dt - timedelta(hours=3)
+            query_end = end_dt + timedelta(hours=3)
             room_outlook_events = await graph_service.get_room_calendar_events(
-                sala.outlook_email, start_dt, end_dt
+                sala.outlook_email, query_start, query_end
             )
             for evt in room_outlook_events:
                 evt_start_str = evt.get("start", {}).get("dateTime", "")
                 evt_end_str = evt.get("end", {}).get("dateTime", "")
-                try:
-                    evt_start = datetime.fromisoformat(evt_start_str).replace(tzinfo=None)
-                    evt_end = datetime.fromisoformat(evt_end_str).replace(tzinfo=None)
-                except (ValueError, TypeError):
+                # Converte para BRT naive (trata "Z", offsets e naive corretamente)
+                evt_start = _to_brasilia_naive(evt_start_str)
+                evt_end = _to_brasilia_naive(evt_end_str)
+                if evt_start is None or evt_end is None:
                     continue
                 # Normaliza start_dt/end_dt para naive (evita TypeError de fuso horário)
                 start_naive = start_dt.replace(tzinfo=None)
@@ -927,16 +958,19 @@ async def check_availability(
         sala_chk = sala_result_chk.scalar_one_or_none()
         if sala_chk and sala_chk.outlook_email:
             try:
+                # Expande a janela em 3h para garantir captura de eventos deslocados
+                query_start = start_dt - timedelta(hours=3)
+                query_end = end_dt + timedelta(hours=3)
                 room_outlook_events = await graph_service.get_room_calendar_events(
-                    sala_chk.outlook_email, start_dt, end_dt
+                    sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
                     evt_s = evt.get("start", {}).get("dateTime", "")
                     evt_e = evt.get("end", {}).get("dateTime", "")
-                    try:
-                        es = datetime.fromisoformat(evt_s).replace(tzinfo=None)
-                        ee = datetime.fromisoformat(evt_e).replace(tzinfo=None)
-                    except (ValueError, TypeError):
+                    # Converte para BRT naive (trata "Z", offsets e naive corretamente)
+                    es = _to_brasilia_naive(evt_s)
+                    ee = _to_brasilia_naive(evt_e)
+                    if es is None or ee is None:
                         continue
                     # Normaliza start_dt/end_dt para naive também (evita TypeError de fuso horário)
                     start_naive = start_dt.replace(tzinfo=None)
