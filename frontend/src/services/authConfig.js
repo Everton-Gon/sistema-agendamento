@@ -25,10 +25,12 @@ export const msalConfig = {
         redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://malloryapp.com.br/',
     },
     cache: {
-        // Armazena o token da Microsoft no sessionStorage (mais seguro que localStorage)
-        // O token é apagado quando o usuário fecha a aba/browser
-        cacheLocation: 'sessionStorage',
-        storeAuthStateInCookie: false,
+        // localStorage persiste durante redirecionamentos (ao contrário de sessionStorage
+        // que é apagado no iOS Safari ao sair da página — causa do redirect não funcionar)
+        cacheLocation: 'localStorage',
+        // Fallback para cookies: garante que o estado do redirect sobrevive
+        // em browsers que bloqueiam localStorage de terceiros
+        storeAuthStateInCookie: true,
     },
 }
 

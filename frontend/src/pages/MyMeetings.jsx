@@ -3,12 +3,14 @@
  *   MyMeetings.jsx — Página de "Minhas Reuniões"
  * =============================================================
  *   Responsável por:
- *   - Listar todas as reuniões do usuário logado
+ *   - Listar reuniões locais do usuário (banco de dados)
+ *   - Listar reuniões do Outlook/Teams do usuário (Graph API)
  *   - Filtrar por: Próximas, Passadas ou Todas
  *   - Exibir detalhes de cada reunião em modal
- *   - Permitir cancelamento com confirmação
- *   - Exibir link do Teams quando disponível
- *   
+ *   - Cancelar reuniões locais (via backend)
+ *   - Cancelar reuniões do Outlook (organizador → DELETE /me/events)
+ *   - Recusar reuniões do Outlook (participante → POST /me/events/decline)
+ *
  *   Filtros:
  *   - "Próximas" → data >= agora
  *   - "Passadas" → data < agora
@@ -18,9 +20,12 @@
 
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useMsal } from '@azure/msal-react'
+import { useAuth } from '../contexts/AuthContext'
 import { meetingService } from '../services/meetingService'
+import { outlookService } from '../services/outlookService'
 import Modal from '../components/Common/Modal'
-import { format } from 'date-fns'
+import { format, addDays, endOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
     Calendar,
@@ -30,20 +35,25 @@ import {
     Trash2,
     AlertCircle,
     CheckCircle,
-    X
+    X,
+    UserX,
+    RefreshCw
 } from 'lucide-react'
 
 function MyMeetings() {
     const location = useLocation()
+    const { user } = useAuth()
+    const { instance: msalInstance } = useMsal()
 
     // === Estados de dados e controle de UI ===
-    const [meetings, setMeetings] = useState([])            // Todas as reuniões do usuário
-    const [loading, setLoading] = useState(true)              // Indicador de carregamento
-    const [filter, setFilter] = useState('upcoming')          // Filtro ativo: 'upcoming' | 'past' | 'all'
-    const [selectedMeeting, setSelectedMeeting] = useState(null) // Reunião aberta no modal de detalhes
-    const [confirmDelete, setConfirmDelete] = useState(null)   // Reunião no modal de confirmação
-    const [deleting, setDeleting] = useState(false)            // Indica cancelamento em andamento
+    const [meetings, setMeetings] = useState([])                   // Todas as reuniões mescladas
+    const [loading, setLoading] = useState(true)                   // Indicador de carregamento
+    const [filter, setFilter] = useState('upcoming')               // Filtro ativo: 'upcoming' | 'past' | 'all'
+    const [selectedMeeting, setSelectedMeeting] = useState(null)   // Reunião aberta no modal de detalhes
+    const [confirmAction, setConfirmAction] = useState(null)       // { meeting, action: 'cancel'|'decline' }
+    const [processing, setProcessing] = useState(false)            // Indica operação em andamento
     const [successMessage, setSuccessMessage] = useState(location.state?.success || null) // Mensagem do router
+    const [outlookError, setOutlookError] = useState(false)        // Se o Outlook falhou ao carregar
 
     // Carrega reuniões ao montar o componente
     useEffect(() => {
@@ -58,12 +68,48 @@ function MyMeetings() {
         }
     }, [successMessage])
 
-    /** Busca todas as reuniões do usuário logado via API */
+    /**
+     * Busca reuniões locais + Outlook em paralelo e mescla os resultados.
+     * Reuniões locais têm source='local', Outlook têm source='outlook'.
+     */
     async function loadMeetings() {
         try {
             setLoading(true)
-            const meetingsData = await meetingService.getMeetings()
-            setMeetings(meetingsData)
+            setOutlookError(false)
+
+            // ── 1. Busca reuniões locais do banco ──
+            const localMeetings = await meetingService.getMeetings()
+            const normalizedLocal = localMeetings.map(m => ({
+                ...m,
+                source: m.source || 'local',
+                is_organizer: true  // Minhas Reuniões locais são sempre do organizador
+            }))
+
+            // ── 2. Busca eventos do Outlook (30 dias passados + 60 dias futuros) ──
+            let outlookEvents = []
+            try {
+                const now = new Date()
+                const rangeStart = new Date(now)
+                rangeStart.setDate(rangeStart.getDate() - 30) // 30 dias atrás (para "Passadas")
+                const rangeEnd = endOfDay(addDays(now, 60))   // 60 dias à frente
+
+                outlookEvents = await outlookService.getUserCalendarEvents(
+                    msalInstance,
+                    user?.email,
+                    rangeStart,
+                    rangeEnd,
+                    localMeetings  // Para deduplicação
+                )
+            } catch (outlookErr) {
+                console.warn('[MyMeetings] Outlook indisponível:', outlookErr.message)
+                setOutlookError(true)
+            }
+
+            // ── 3. Mescla e ordena por data de início ──
+            const allMeetings = [...normalizedLocal, ...outlookEvents]
+                .sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime))
+
+            setMeetings(allMeetings)
         } catch (error) {
             console.error('Error loading meetings:', error)
         } finally {
@@ -85,25 +131,79 @@ function MyMeetings() {
     })
 
     /**
-     * Cancela uma reunião após confirmação.
-     * 1. Chama meetingService.cancelMeeting(id)
-     * 2. Remove da lista local (atualização otimista)
-     * 3. Fecha modal e exibe mensagem de sucesso
+     * Executa a ação de cancelar ou recusar após confirmação.
+     * - Reunião local → chama meetingService.cancelMeeting()
+     * - Reunião Outlook + organizador → outlookService.cancelOutlookEvent()
+     * - Reunião Outlook + participante → outlookService.declineOutlookEvent()
      */
-    const handleCancelMeeting = async () => {
-        if (!confirmDelete) return
+    const handleConfirmAction = async () => {
+        if (!confirmAction) return
 
-        setDeleting(true)
+        const { meeting, action } = confirmAction
+        setProcessing(true)
+
         try {
-            await meetingService.cancelMeeting(confirmDelete.id)
-            setMeetings(prev => prev.filter(m => m.id !== confirmDelete.id))
-            setConfirmDelete(null)
-            setSuccessMessage('Reunião cancelada com sucesso')
+            let success = false
+
+            if (meeting.source === 'local') {
+                // Cancela reunião local via backend
+                await meetingService.cancelMeeting(meeting.id)
+                setMeetings(prev => prev.filter(m => m.id !== meeting.id))
+                setSuccessMessage('Reunião cancelada com sucesso')
+                success = true
+
+            } else if (meeting.source === 'outlook') {
+                if (action === 'cancel') {
+                    // Cancela evento Outlook (organizador)
+                    success = await outlookService.cancelOutlookEvent(
+                        msalInstance,
+                        meeting.outlook_event_id
+                    )
+                    if (success) {
+                        setMeetings(prev => prev.filter(m => m.outlook_event_id !== meeting.outlook_event_id))
+                        setSuccessMessage('Reunião cancelada no Outlook com sucesso')
+                    }
+                } else if (action === 'decline') {
+                    // Recusa evento Outlook (participante)
+                    success = await outlookService.declineOutlookEvent(
+                        msalInstance,
+                        meeting.outlook_event_id
+                    )
+                    if (success) {
+                        setMeetings(prev => prev.filter(m => m.outlook_event_id !== meeting.outlook_event_id))
+                        setSuccessMessage('Convite recusado com sucesso')
+                    }
+                }
+
+                if (!success) {
+                    setSuccessMessage('Erro ao processar a ação. Tente novamente.')
+                }
+            }
+
+            setConfirmAction(null)
+            if (selectedMeeting?.outlook_event_id === meeting.outlook_event_id ||
+                selectedMeeting?.id === meeting.id) {
+                setSelectedMeeting(null)
+            }
         } catch (error) {
-            console.error('Error canceling meeting:', error)
+            console.error('Erro ao processar ação:', error)
         } finally {
-            setDeleting(false)
+            setProcessing(false)
         }
+    }
+
+    /**
+     * Abre o modal de confirmação correto baseado no tipo de reunião e papel do usuário.
+     * - Local → sempre "Cancelar"
+     * - Outlook + organizador → "Cancelar" (remove para todos)
+     * - Outlook + participante → "Recusar" (remove só do seu calendário)
+     */
+    const handleActionClick = (e, meeting) => {
+        e.stopPropagation()
+        const action = (meeting.source === 'outlook' && !meeting.is_organizer)
+            ? 'decline'
+            : 'cancel'
+        setConfirmAction({ meeting, action })
     }
 
     if (loading) {
@@ -114,23 +214,42 @@ function MyMeetings() {
         )
     }
 
+    // Textos dos badges de papel
+    const getRoleBadge = (meeting) => {
+        if (meeting.source === 'local') return { label: '👤 Organizador', bg: 'var(--primary-100)', color: 'var(--primary-600)' }
+        if (meeting.is_organizer) return { label: '👤 Organizador', bg: 'var(--primary-100)', color: 'var(--primary-600)' }
+        return { label: '👥 Participante', bg: 'var(--success-light)', color: '#15803d' }
+    }
+
+    // Texto do botão de ação
+    const getActionButton = (meeting) => {
+        if (meeting.source === 'outlook' && !meeting.is_organizer) {
+            return { icon: <UserX size={18} />, title: 'Recusar convite', color: 'var(--warning)' }
+        }
+        return { icon: <Trash2 size={18} />, title: 'Cancelar reunião', color: 'var(--error)' }
+    }
+
     return (
         <div>
-            {/* === MENSAGEM DE SUCESSO (ex: "Reunião cancelada") === */}
+            {/* === MENSAGEM DE SUCESSO === */}
             {successMessage && (
                 <div style={{
                     padding: 'var(--space-md)',
                     marginBottom: 'var(--space-lg)',
                     borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'var(--success-light)',
+                    backgroundColor: successMessage.startsWith('Erro')
+                        ? 'var(--error-light)'
+                        : 'var(--success-light)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 'var(--space-sm)'
                 }}>
                     <div className="flex items-center gap-sm">
-                        <CheckCircle size={20} style={{ color: 'var(--success)' }} />
-                        <span style={{ color: '#15803d' }}>{successMessage}</span>
+                        <CheckCircle size={20} style={{ color: successMessage.startsWith('Erro') ? 'var(--error)' : 'var(--success)' }} />
+                        <span style={{ color: successMessage.startsWith('Erro') ? 'var(--error)' : '#15803d' }}>
+                            {successMessage}
+                        </span>
                     </div>
                     <button
                         onClick={() => setSuccessMessage(null)}
@@ -141,11 +260,39 @@ function MyMeetings() {
                 </div>
             )}
 
+            {/* === AVISO: Outlook indisponível === */}
+            {outlookError && (
+                <div style={{
+                    padding: 'var(--space-md)',
+                    marginBottom: 'var(--space-lg)',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--warning-light)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 'var(--space-sm)'
+                }}>
+                    <div className="flex items-center gap-sm">
+                        <AlertCircle size={20} style={{ color: '#b45309' }} />
+                        <span style={{ color: '#92400e', fontSize: 'var(--font-size-sm)' }}>
+                            Não foi possível carregar as reuniões do Outlook. Exibindo apenas as reuniões do sistema.
+                        </span>
+                    </div>
+                    <button
+                        onClick={loadMeetings}
+                        className="btn btn-ghost btn-sm"
+                        title="Tentar novamente"
+                    >
+                        <RefreshCw size={14} />
+                    </button>
+                </div>
+            )}
+
             <div className="flex justify-between items-center" style={{ marginBottom: 'var(--space-lg)', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
                 <div>
                     <h1>Minhas Reuniões</h1>
                     <p style={{ color: 'var(--text-secondary)' }}>
-                        Gerencie suas reuniões agendadas
+                        Gerencie suas reuniões do sistema e do Outlook/Teams
                     </p>
                 </div>
 
@@ -169,7 +316,6 @@ function MyMeetings() {
 
             {/* === LISTA DE REUNIÕES ou ESTADO VAZIO === */}
             {filteredMeetings.length === 0 ? (
-                /* Estado vazio — sem reuniões no filtro selecionado */
                 <div className="card">
                     <div className="empty-state">
                         <Calendar size={64} style={{ color: 'var(--gray-300)', marginBottom: 'var(--space-lg)' }} />
@@ -184,76 +330,97 @@ function MyMeetings() {
                     </div>
                 </div>
             ) : (
-                /* Lista de cards de reuniões (clicável → abre modal de detalhes) */
                 <div className="flex flex-col gap-md">
-                    {filteredMeetings.map(meeting => (
-                        <div
-                            key={meeting.id}
-                            className="card"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => setSelectedMeeting(meeting)}
-                        >
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                padding: 'var(--space-lg)',
-                                borderLeft: `4px solid ${meeting.room_color || 'var(--primary-500)'}`
-                            }}>
-                                <div style={{ flex: 1 }}>
-                                    <div className="flex items-center gap-md" style={{ marginBottom: 'var(--space-sm)', flexWrap: 'wrap' }}>
-                                        <h3>{meeting.title}</h3>
-                                        <span
-                                            className="badge"
-                                            style={{
-                                                backgroundColor: meeting.room_color + '20',
-                                                color: meeting.room_color
-                                            }}
-                                        >
-                                            {meeting.room_name}
-                                        </span>
-                                        <span
-                                            className="badge"
-                                            style={{
-                                                backgroundColor: 'var(--primary-100)',
-                                                color: 'var(--primary-600)'
-                                            }}
-                                        >
-                                            👤 Organizador
-                                        </span>
-                                    </div>
+                    {filteredMeetings.map((meeting, idx) => {
+                        const roleBadge = getRoleBadge(meeting)
+                        const actionBtn = getActionButton(meeting)
 
-                                    <div className="flex gap-lg text-sm" style={{ color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                                        <span className="flex items-center gap-sm">
-                                            <Calendar size={14} />
-                                            {format(new Date(meeting.start_datetime), "dd 'de' MMMM", { locale: ptBR })}
-                                        </span>
-                                        <span className="flex items-center gap-sm">
-                                            <Clock size={14} />
-                                            {format(new Date(meeting.start_datetime), 'HH:mm')} - {format(new Date(meeting.end_datetime), 'HH:mm')}
-                                        </span>
-                                        {meeting.attendees?.length > 0 && (
-                                            <span className="flex items-center gap-sm">
-                                                <Users size={14} />
-                                                {meeting.attendees.length} participante{meeting.attendees.length > 1 ? 's' : ''}
+                        return (
+                            <div
+                                key={meeting.id || meeting.outlook_event_id || idx}
+                                className="card"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setSelectedMeeting(meeting)}
+                            >
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    padding: 'var(--space-lg)',
+                                    borderLeft: `4px solid ${meeting.room_color || 'var(--primary-500)'}`
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div className="flex items-center gap-md" style={{ marginBottom: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                                            <h3>{meeting.title}</h3>
+
+                                            {/* Badge sala */}
+                                            <span
+                                                className="badge"
+                                                style={{
+                                                    backgroundColor: (meeting.room_color || '#6366f1') + '20',
+                                                    color: meeting.room_color || '#6366f1'
+                                                }}
+                                            >
+                                                {meeting.room_name}
                                             </span>
-                                        )}
-                                    </div>
-                                </div>
 
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        setConfirmDelete(meeting)
-                                    }}
-                                    className="btn btn-ghost btn-icon"
-                                    title="Cancelar reunião"
-                                    style={{ color: 'var(--error)' }}
-                                >
-                                    <Trash2 size={18} />
-                                </button>
+                                            {/* Badge papel (Organizador / Participante) */}
+                                            <span
+                                                className="badge"
+                                                style={{
+                                                    backgroundColor: roleBadge.bg,
+                                                    color: roleBadge.color
+                                                }}
+                                            >
+                                                {roleBadge.label}
+                                            </span>
+
+                                            {/* Badge Outlook (se veio do Outlook) */}
+                                            {meeting.source === 'outlook' && (
+                                                <span style={{
+                                                    fontSize: '10px',
+                                                    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                                    color: '#6366f1',
+                                                    padding: '2px 7px',
+                                                    borderRadius: '6px',
+                                                    fontWeight: 600,
+                                                    letterSpacing: '0.02em'
+                                                }}>
+                                                    📅 Outlook
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex gap-lg text-sm" style={{ color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                            <span className="flex items-center gap-sm">
+                                                <Calendar size={14} />
+                                                {format(new Date(meeting.start_datetime), "dd 'de' MMMM", { locale: ptBR })}
+                                            </span>
+                                            <span className="flex items-center gap-sm">
+                                                <Clock size={14} />
+                                                {format(new Date(meeting.start_datetime), 'HH:mm')} - {format(new Date(meeting.end_datetime), 'HH:mm')}
+                                            </span>
+                                            {meeting.attendees?.length > 0 && (
+                                                <span className="flex items-center gap-sm">
+                                                    <Users size={14} />
+                                                    {meeting.attendees.length} participante{meeting.attendees.length > 1 ? 's' : ''}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Botão de ação: Cancelar ou Recusar */}
+                                    <button
+                                        onClick={(e) => handleActionClick(e, meeting)}
+                                        className="btn btn-ghost btn-icon"
+                                        title={actionBtn.title}
+                                        style={{ color: actionBtn.color }}
+                                    >
+                                        {actionBtn.icon}
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             )}
 
@@ -263,22 +430,66 @@ function MyMeetings() {
                 onClose={() => setSelectedMeeting(null)}
                 title="Detalhes da Reunião"
                 size="lg"
+                footer={
+                    <>
+                        {/* Botão de ação principal no footer do modal */}
+                        {selectedMeeting && new Date(selectedMeeting.start_datetime) >= new Date() && (
+                            <button
+                                className={`btn ${selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer ? 'btn-warning' : 'btn-danger'}`}
+                                onClick={() => {
+                                    const action = (selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer)
+                                        ? 'decline'
+                                        : 'cancel'
+                                    setConfirmAction({ meeting: selectedMeeting, action })
+                                    setSelectedMeeting(null)
+                                }}
+                                style={selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer ? {
+                                    backgroundColor: '#f59e0b', color: 'white', border: 'none'
+                                } : {}}
+                            >
+                                {selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer
+                                    ? '✕ Recusar Convite'
+                                    : '✕ Cancelar Reunião'
+                                }
+                            </button>
+                        )}
+                        <button className="btn btn-secondary" onClick={() => setSelectedMeeting(null)}>
+                            Fechar
+                        </button>
+                    </>
+                }
             >
                 {selectedMeeting && (
                     <div className="flex flex-col gap-lg">
+                        {/* Título + badges */}
                         <div>
-                            <h3 style={{ marginBottom: 'var(--space-sm)' }}>{selectedMeeting.title}</h3>
+                            <div className="flex items-center gap-sm" style={{ marginBottom: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                                <h3>{selectedMeeting.title}</h3>
+                                {selectedMeeting.source === 'outlook' && (
+                                    <span style={{
+                                        fontSize: '11px',
+                                        backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                        color: '#6366f1',
+                                        padding: '3px 8px',
+                                        borderRadius: '6px',
+                                        fontWeight: 600
+                                    }}>
+                                        📅 Outlook/Teams
+                                    </span>
+                                )}
+                            </div>
                             <span
                                 className="badge"
                                 style={{
-                                    backgroundColor: selectedMeeting.room_color + '20',
-                                    color: selectedMeeting.room_color
+                                    backgroundColor: (selectedMeeting.room_color || '#6366f1') + '20',
+                                    color: selectedMeeting.room_color || '#6366f1'
                                 }}
                             >
                                 {selectedMeeting.room_name}
                             </span>
                         </div>
 
+                        {/* Descrição */}
                         {selectedMeeting.description && (
                             <div>
                                 <h4 style={{ marginBottom: 'var(--space-xs)', color: 'var(--text-secondary)' }}>Descrição</h4>
@@ -286,6 +497,7 @@ function MyMeetings() {
                             </div>
                         )}
 
+                        {/* Data e horário */}
                         <div className="flex flex-col gap-md">
                             <div className="flex items-center gap-md">
                                 <Calendar size={20} style={{ color: 'var(--text-secondary)' }} />
@@ -313,46 +525,57 @@ function MyMeetings() {
                             </div>
                         </div>
 
+                        {/* Participantes */}
                         {selectedMeeting.attendees?.length > 0 && (
                             <div>
                                 <h4 style={{ marginBottom: 'var(--space-sm)', color: 'var(--text-secondary)' }}>
                                     Participantes ({selectedMeeting.attendees.length})
                                 </h4>
                                 <div className="flex flex-col gap-sm">
-                                    {selectedMeeting.attendees.map((attendee, index) => (
-                                        <div
-                                            key={index}
-                                            className="flex items-center gap-sm"
-                                            style={{
-                                                padding: 'var(--space-sm)',
-                                                backgroundColor: 'var(--bg-secondary)',
-                                                borderRadius: 'var(--radius-md)'
-                                            }}
-                                        >
-                                            <div className="avatar avatar-sm">
-                                                {(attendee.name || attendee.email)[0].toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <p className="font-medium">{attendee.name || 'Sem nome'}</p>
-                                                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                                    {attendee.email}
-                                                </p>
-                                            </div>
-                                            <span
-                                                className={`badge ${attendee.status === 'aceito' ? 'badge-success' :
-                                                    attendee.status === 'recusado' ? 'badge-error' : 'badge-warning'
-                                                    }`}
-                                                style={{ marginLeft: 'auto' }}
+                                    {selectedMeeting.attendees.map((attendee, index) => {
+                                        // Normaliza status do Outlook vs local
+                                        const statusMap = {
+                                            accepted: 'aceito', declined: 'recusado',
+                                            tentativelyAccepted: 'pendente', none: 'pendente',
+                                            aceito: 'aceito', recusado: 'recusado', pendente: 'pendente'
+                                        }
+                                        const statusNorm = statusMap[attendee.status] || 'pendente'
+                                        return (
+                                            <div
+                                                key={index}
+                                                className="flex items-center gap-sm"
+                                                style={{
+                                                    padding: 'var(--space-sm)',
+                                                    backgroundColor: 'var(--bg-secondary)',
+                                                    borderRadius: 'var(--radius-md)'
+                                                }}
                                             >
-                                                {attendee.status === 'aceito' ? 'Confirmado' :
-                                                    attendee.status === 'recusado' ? 'Recusado' : 'Pendente'}
-                                            </span>
-                                        </div>
-                                    ))}
+                                                <div className="avatar avatar-sm">
+                                                    {(attendee.name || attendee.email)[0].toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium">{attendee.name || 'Sem nome'}</p>
+                                                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                                        {attendee.email}
+                                                    </p>
+                                                </div>
+                                                <span
+                                                    className={`badge ${statusNorm === 'aceito' ? 'badge-success' :
+                                                        statusNorm === 'recusado' ? 'badge-error' : 'badge-warning'
+                                                        }`}
+                                                    style={{ marginLeft: 'auto' }}
+                                                >
+                                                    {statusNorm === 'aceito' ? 'Confirmado' :
+                                                        statusNorm === 'recusado' ? 'Recusado' : 'Pendente'}
+                                                </span>
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )}
 
+                        {/* Organizador / criado em */}
                         <div style={{
                             padding: 'var(--space-md)',
                             backgroundColor: 'var(--bg-secondary)',
@@ -361,11 +584,15 @@ function MyMeetings() {
                             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                                 <strong>Organizador:</strong> {selectedMeeting.organizer_name} ({selectedMeeting.organizer_email})
                             </p>
-                            <p className="text-sm" style={{ color: 'var(--text-secondary)', marginTop: 'var(--space-xs)' }}>
-                                <strong>Criado em:</strong> {format(new Date(selectedMeeting.created_at), "dd/MM/yyyy 'às' HH:mm")}
-                            </p>
+                            {selectedMeeting.created_at && (
+                                <p className="text-sm" style={{ color: 'var(--text-secondary)', marginTop: 'var(--space-xs)' }}>
+                                    <strong>Criado em:</strong>{' '}
+                                    {format(new Date(selectedMeeting.created_at), "dd/MM/yyyy 'às' HH:mm")}
+                                </p>
+                            )}
                         </div>
 
+                        {/* Botão Teams */}
                         {selectedMeeting.teams_link && (
                             <div style={{
                                 padding: 'var(--space-md)',
@@ -401,32 +628,37 @@ function MyMeetings() {
                 )}
             </Modal>
 
-            {/* === MODAL: Confirmação de Cancelamento === */}
+            {/* === MODAL: Confirmação de Cancelar ou Recusar === */}
             <Modal
-                isOpen={!!confirmDelete}
-                onClose={() => setConfirmDelete(null)}
-                title="Cancelar Reunião"
+                isOpen={!!confirmAction}
+                onClose={() => setConfirmAction(null)}
+                title={confirmAction?.action === 'decline' ? 'Recusar Convite' : 'Cancelar Reunião'}
                 footer={
                     <>
                         <button
                             className="btn btn-secondary"
-                            onClick={() => setConfirmDelete(null)}
-                            disabled={deleting}
+                            onClick={() => setConfirmAction(null)}
+                            disabled={processing}
                         >
                             Voltar
                         </button>
                         <button
-                            className="btn btn-danger"
-                            onClick={handleCancelMeeting}
-                            disabled={deleting}
+                            className="btn"
+                            onClick={handleConfirmAction}
+                            disabled={processing}
+                            style={{
+                                backgroundColor: confirmAction?.action === 'decline' ? '#f59e0b' : 'var(--error)',
+                                color: 'white',
+                                border: 'none'
+                            }}
                         >
-                            {deleting ? (
+                            {processing ? (
                                 <>
                                     <div className="spinner spinner-sm" style={{ borderTopColor: 'white' }} />
-                                    Cancelando...
+                                    {confirmAction?.action === 'decline' ? 'Recusando...' : 'Cancelando...'}
                                 </>
                             ) : (
-                                'Sim, Cancelar'
+                                confirmAction?.action === 'decline' ? 'Sim, Recusar' : 'Sim, Cancelar'
                             )}
                         </button>
                     </>
@@ -436,23 +668,34 @@ function MyMeetings() {
                     <div style={{
                         width: '64px',
                         height: '64px',
-                        backgroundColor: 'var(--error-light)',
+                        backgroundColor: confirmAction?.action === 'decline' ? '#fef3c7' : 'var(--error-light)',
                         borderRadius: 'var(--radius-full)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                     }}>
-                        <AlertCircle size={32} style={{ color: 'var(--error)' }} />
+                        {confirmAction?.action === 'decline'
+                            ? <UserX size={32} style={{ color: '#f59e0b' }} />
+                            : <AlertCircle size={32} style={{ color: 'var(--error)' }} />
+                        }
                     </div>
                     <div>
                         <h4 style={{ marginBottom: 'var(--space-sm)' }}>
-                            Tem certeza que deseja cancelar esta reunião?
+                            {confirmAction?.action === 'decline'
+                                ? 'Tem certeza que deseja recusar este convite?'
+                                : 'Tem certeza que deseja cancelar esta reunião?'
+                            }
                         </h4>
                         <p style={{ color: 'var(--text-secondary)' }}>
-                            Esta ação não pode ser desfeita. Todos os participantes serão notificados.
+                            {confirmAction?.action === 'decline'
+                                ? 'A reunião será removida do seu calendário. O organizador será notificado.'
+                                : confirmAction?.meeting?.source === 'outlook'
+                                    ? 'O evento será cancelado no Outlook/Teams e todos os participantes serão notificados.'
+                                    : 'Esta ação não pode ser desfeita. Todos os participantes serão notificados.'
+                            }
                         </p>
                     </div>
-                    {confirmDelete && (
+                    {confirmAction?.meeting && (
                         <div style={{
                             padding: 'var(--space-md)',
                             backgroundColor: 'var(--bg-secondary)',
@@ -460,9 +703,23 @@ function MyMeetings() {
                             width: '100%',
                             textAlign: 'left'
                         }}>
-                            <p className="font-medium">{confirmDelete.title}</p>
+                            {confirmAction.meeting.source === 'outlook' && (
+                                <span style={{
+                                    fontSize: '10px',
+                                    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                    color: '#6366f1',
+                                    padding: '2px 6px',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                    marginBottom: '6px',
+                                    display: 'inline-block'
+                                }}>
+                                    📅 Outlook
+                                </span>
+                            )}
+                            <p className="font-medium">{confirmAction.meeting.title}</p>
                             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                {format(new Date(confirmDelete.start_datetime), "dd/MM/yyyy 'às' HH:mm")} - {confirmDelete.room_name}
+                                {format(new Date(confirmAction.meeting.start_datetime), "dd/MM/yyyy 'às' HH:mm")} - {confirmAction.meeting.room_name}
                             </p>
                         </div>
                     )}

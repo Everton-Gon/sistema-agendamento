@@ -7,29 +7,22 @@
  *   - Mostrar atalhos rápidos (Nova Reunião, Calendário, Salas)
  *   - Exibir estatísticas: reuniões hoje, na semana, total de salas
  *   - Listar reuniões de hoje e próximas reuniões
- *   
- *   Layout:
- *   ┌──────────────────────────────────────────┐
- *   │  Saudação + Data atual                   │
- *   ├─────────────┬────────────┬───────────────┤
- *   │ Nova Reunião│ Calendário │ Salas         │  ← Ações rápidas
- *   ├─────────────┼────────────┼───────────────┤
- *   │  Hoje: X    │ Semana: Y  │ Salas: Z      │  ← Estatísticas
- *   ├─────────────────────┬────────────────────┤
- *   │ Reuniões de Hoje    │ Próximas Reuniões  │  ← Listas
- *   └─────────────────────┴────────────────────┘
- *   
+ *   - Incluir reuniões marcadas diretamente no Outlook/Teams do usuário
+ *
  *   Dados carregados:
- *   - Reuniões (hoje + semana) via meetingService.getMeetings()
+ *   - Reuniões locais via meetingService.getMeetings()
+ *   - Reuniões do Outlook via outlookService.getUserCalendarEvents()
  *   - Salas via roomService.getRooms()
  * =============================================================
  */
 
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { useMsal } from '@azure/msal-react'
 import { useAuth } from '../contexts/AuthContext'
 import { meetingService } from '../services/meetingService'
 import { roomService } from '../services/roomService'
+import { outlookService } from '../services/outlookService'
 import {
     Calendar,
     Plus,
@@ -44,13 +37,14 @@ import { ptBR } from 'date-fns/locale'
 
 function Dashboard() {
     const { user } = useAuth()
+    const { instance: msalInstance } = useMsal()
 
     // Estados para dados do dashboard
-    const [todayMeetings, setTodayMeetings] = useState([])     // Reuniões de hoje
+    const [todayMeetings, setTodayMeetings] = useState([])      // Reuniões de hoje
     const [upcomingMeetings, setUpcomingMeetings] = useState([]) // Próximas 5 reuniões
-    const [rooms, setRooms] = useState([])                      // Lista de salas
-    const [loading, setLoading] = useState(true)                 // Carregamento inicial
-    const [stats, setStats] = useState({                         // Estatísticas resumidas
+    const [rooms, setRooms] = useState([])                       // Lista de salas
+    const [loading, setLoading] = useState(true)                  // Carregamento inicial
+    const [stats, setStats] = useState({                          // Estatísticas resumidas
         today: 0,    // Total de reuniões hoje
         week: 0,     // Total de reuniões na semana
         rooms: 6     // Total de salas (padrão: 6)
@@ -62,9 +56,9 @@ function Dashboard() {
     }, [])
 
     /**
-     * Carrega todos os dados do dashboard em uma única chamada.
-     * 1. Busca reuniões da semana (hoje até 7 dias)
-     * 2. Busca lista de salas
+     * Carrega todos os dados do dashboard combinando reuniões locais e do Outlook.
+     * 1. Busca reuniões locais (banco) e events do Outlook em paralelo
+     * 2. Mescla as listas (Outlook já vem deduplicado pelo serviço)
      * 3. Filtra reuniões de hoje e próximas
      * 4. Calcula estatísticas
      */
@@ -77,19 +71,46 @@ function Dashboard() {
             const startStr = format(startOfDay(today), "yyyy-MM-dd'T'HH:mm:ss")
             const endStr = format(endOfDay(weekEnd), "yyyy-MM-dd'T'HH:mm:ss")
 
-            // Carrega reuniões e salas em paralelo
+            // ── Passo 1: busca reuniões locais e salas em paralelo ──
             const [meetingsData, roomsData] = await Promise.all([
                 meetingService.getMeetings(startStr, endStr),
                 roomService.getRooms()
             ])
 
-            // Filtra reuniões de hoje (compara apenas a data, sem horário)
-            const todaysList = meetingsData.filter(m =>
+            // ── Passo 2: busca reuniões do Outlook do usuário ──
+            // Faz em separado para não bloquear o resto se falhar
+            let outlookEvents = []
+            try {
+                outlookEvents = await outlookService.getUserCalendarEvents(
+                    msalInstance,
+                    user?.email,
+                    startOfDay(today),
+                    endOfDay(weekEnd),
+                    meetingsData  // Para deduplicação
+                )
+            } catch (outlookErr) {
+                // Outlook falhou → continua só com reuniões locais
+                console.warn('[Dashboard] Não foi possível carregar eventos do Outlook:', outlookErr.message)
+            }
+
+            // ── Passo 3: normaliza reuniões locais para formato comum ──
+            const normalizedLocal = meetingsData.map(m => ({
+                ...m,
+                source: m.source || 'local',
+                is_organizer: true  // Reuniões locais são sempre do organizador
+            }))
+
+            // ── Passo 4: mescla e ordena por data de início ──
+            const allMeetings = [...normalizedLocal, ...outlookEvents]
+                .sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime))
+
+            // ── Passo 5: filtra reuniões de hoje ──
+            const todaysList = allMeetings.filter(m =>
                 format(new Date(m.start_datetime), 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
             )
 
-            // Filtra próximas reuniões (futuras, máximo 5)
-            const upcomingList = meetingsData.filter(m =>
+            // ── Passo 6: filtra próximas reuniões (futuras, máximo 5) ──
+            const upcomingList = allMeetings.filter(m =>
                 new Date(m.start_datetime) > today
             ).slice(0, 5)
 
@@ -98,7 +119,7 @@ function Dashboard() {
             setRooms(roomsData)
             setStats({
                 today: todaysList.length,
-                week: meetingsData.length,
+                week: allMeetings.length,
                 rooms: roomsData.length
             })
         } catch (error) {
@@ -326,8 +347,8 @@ function Dashboard() {
                         ) : (
                             /* Lista de reuniões de hoje */
                             <div className="flex flex-col gap-md">
-                                {todayMeetings.map(meeting => (
-                                    <div key={meeting.id} style={{
+                                {todayMeetings.map((meeting, idx) => (
+                                    <div key={meeting.id || meeting.outlook_event_id || idx} style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 'var(--space-md)',
@@ -337,7 +358,23 @@ function Dashboard() {
                                         borderLeft: `4px solid ${meeting.room_color || 'var(--primary-500)'}`
                                     }}>
                                         <div style={{ flex: 1 }}>
-                                            <h4 style={{ marginBottom: '4px' }}>{meeting.title}</h4>
+                                            {/* Título + badge Outlook */}
+                                            <div className="flex items-center gap-sm" style={{ marginBottom: '4px', flexWrap: 'wrap' }}>
+                                                <h4>{meeting.title}</h4>
+                                                {meeting.source === 'outlook' && (
+                                                    <span style={{
+                                                        fontSize: '10px',
+                                                        backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                                        color: '#6366f1',
+                                                        padding: '2px 6px',
+                                                        borderRadius: '6px',
+                                                        fontWeight: 600,
+                                                        letterSpacing: '0.02em'
+                                                    }}>
+                                                        📅 Outlook
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex gap-md text-sm" style={{ color: 'var(--text-secondary)' }}>
                                                 <span className="flex items-center gap-sm">
                                                     <Clock size={14} />
@@ -373,8 +410,8 @@ function Dashboard() {
                         ) : (
                             /* Lista de próximas reuniões (máximo 5) */
                             <div className="flex flex-col gap-md">
-                                {upcomingMeetings.map(meeting => (
-                                    <div key={meeting.id} style={{
+                                {upcomingMeetings.map((meeting, idx) => (
+                                    <div key={meeting.id || meeting.outlook_event_id || idx} style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 'var(--space-md)',
@@ -384,7 +421,23 @@ function Dashboard() {
                                         borderLeft: `4px solid ${meeting.room_color || 'var(--primary-500)'}`
                                     }}>
                                         <div style={{ flex: 1 }}>
-                                            <h4 style={{ marginBottom: '4px' }}>{meeting.title}</h4>
+                                            {/* Título + badge Outlook */}
+                                            <div className="flex items-center gap-sm" style={{ marginBottom: '4px', flexWrap: 'wrap' }}>
+                                                <h4>{meeting.title}</h4>
+                                                {meeting.source === 'outlook' && (
+                                                    <span style={{
+                                                        fontSize: '10px',
+                                                        backgroundColor: 'rgba(99, 102, 241, 0.12)',
+                                                        color: '#6366f1',
+                                                        padding: '2px 6px',
+                                                        borderRadius: '6px',
+                                                        fontWeight: 600,
+                                                        letterSpacing: '0.02em'
+                                                    }}>
+                                                        📅 Outlook
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex flex-col gap-sm text-sm" style={{ color: 'var(--text-secondary)' }}>
                                                 <span className="flex items-center gap-sm">
                                                     <Calendar size={14} />

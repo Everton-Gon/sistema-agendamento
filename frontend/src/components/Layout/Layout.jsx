@@ -26,14 +26,23 @@ import Header from './Header'
 function Layout() {
     // Controla visibilidade da sidebar no mobile (toggle via Header)
     const [sidebarOpen, setSidebarOpen] = useState(false)
-
-    const toggleSidebar = () => setSidebarOpen(!sidebarOpen)  // Alterna abrir/fechar
-    const closeSidebar = () => setSidebarOpen(false)          // Fecha a sidebar
+    // Controla se a sidebar está recolhida (apenas no desktop)
+    const [collapsed, setCollapsed] = useState(false)
+    // Detecta se é totem (800x1200)
+    const isTotem = typeof window !== 'undefined' && window.innerWidth === 800 && window.innerHeight >= 1200;
+    const toggleSidebar = () => setSidebarOpen(!sidebarOpen)    // Alterna abrir/fechar no mobile
+    const closeSidebar = () => setSidebarOpen(false)            // Fecha a sidebar
+    const toggleCollapsed = () => setCollapsed(!collapsed)      // Recolhe/expande no desktop
 
     return (
         <div className="app-layout">
             {/* Sidebar — menu lateral de navegação */}
-            <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
+            <Sidebar
+                isOpen={sidebarOpen}
+                onClose={closeSidebar}
+                collapsed={collapsed}
+                onToggleCollapse={toggleCollapsed}
+            />
 
             {/* Overlay escuro no mobile — clicando nele fecha a sidebar */}
             {sidebarOpen && (
@@ -50,7 +59,11 @@ function Layout() {
             )}
 
             {/* Área principal — Header no topo + conteúdo da página */}
-            <div className="main-content">
+            {/* marginLeft acompanha a largura do sidebar com animação suave */}
+            <div className="main-content" style={{
+                marginLeft: isTotem ? '0' : (collapsed ? '64px' : undefined),
+                transition: 'margin-left 0.3s ease'
+            }}>
                 <Header onMenuClick={toggleSidebar} />
                 <main className="page-content">
                     {/* Outlet renderiza o componente da rota ativa */}

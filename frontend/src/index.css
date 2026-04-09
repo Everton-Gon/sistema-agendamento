@@ -1031,7 +1031,7 @@ a:hover {
    =================================== */
 
 /* Tablet */
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
   :root {
     --sidebar-width: 240px;
   }
@@ -1461,5 +1461,178 @@ a:hover {
   .login-container {
     display: flex !important;
     flex-direction: column-reverse;/* <--- Isso inverte a ordem: Branco no topo, Laranja embaixo */
+  }
+}
+
+/* ===================================
+   Time Grid (Visão Dia / Semana)
+   =================================== */
+
+/* Wrapper principal: horas à esquerda + dias à direita */
+.time-grid-wrapper {
+  display: flex;
+  overflow-y: auto;
+  max-height: 700px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Coluna de rótulos de hora */
+.time-grid-hours-col {
+  flex-shrink: 0;
+  width: 56px;
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+}
+
+/* Espaço em branco para alinhar com os cabeçalhos dos dias */
+.time-grid-hours-top-spacer {
+  height: 48px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Cada rótulo de hora (07:00, 08:00...) */
+.time-grid-hour-label {
+  height: 60px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 4px 6px 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Área que contém cabeçalhos dos dias + colunas */
+.time-grid-days-area {
+  flex: 1;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+/* Linha de cabeçalhos dos dias (Dom, Seg...) */
+.time-grid-days-header-row {
+  display: grid;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Cabeçalho de cada dia */
+.time-grid-day-header {
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-right: 1px solid var(--border-color);
+  padding: 4px;
+}
+
+.time-grid-day-header.today {
+  background-color: var(--primary-50);
+}
+
+.time-grid-day-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.time-grid-day-number {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.time-grid-day-number.today {
+  background-color: var(--primary-500);
+  color: white;
+}
+
+/* Grade de colunas dos dias */
+.time-grid-columns {
+  display: grid;
+}
+
+/* Coluna de cada dia — posição relativa para os eventos flutuantes */
+.time-grid-day-column {
+  position: relative;
+  border-right: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+/* Linha horizontal de cada hora */
+.time-slot-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: var(--border-color);
+  pointer-events: none;
+}
+
+/* Evento flutuante na grade de horários */
+.time-grid-event {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border-radius: var(--radius-sm);
+  padding: 3px 5px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  transition: filter var(--transition-fast), transform var(--transition-fast);
+  z-index: 1;
+}
+
+.time-grid-event:hover {
+  filter: brightness(1.1);
+  transform: scale(1.01);
+}
+
+.time-grid-event-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.time-grid-event-title {
+  font-size: var(--font-size-xs);
+  color: white;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Configurações específicas para o Totem (Portrait) */
+@media (width: 800px) and (min-height: 1200px) {
+  .calendar-grid {
+    display: grid !important; /* Garante que a grade apareça */
+  }
+  
+  .calendar-mini-grid, 
+  .calendar-agenda {
+    display: none !important; /* Esconde a lista de celular no totem */
+  }
+  .main-content {
+    margin-left: 0 !important; /* Garante que o calendário use a largura toda */
+  }
+  
+  .sidebar {
+    display: none; /* Geralmente em totens deixamos a barra lateral escondida por padrão */
   }
 }

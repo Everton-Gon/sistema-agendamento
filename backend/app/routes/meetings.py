@@ -454,11 +454,14 @@ async def _find_available_rooms(
                     evt_s = evt.get("start", {}).get("dateTime", "")
                     evt_e = evt.get("end", {}).get("dateTime", "")
                     try:
-                        es = datetime.fromisoformat(evt_s)
-                        ee = datetime.fromisoformat(evt_e)
+                        es = datetime.fromisoformat(evt_s).replace(tzinfo=None)
+                        ee = datetime.fromisoformat(evt_e).replace(tzinfo=None)
                     except (ValueError, TypeError):
                         continue
-                    if es < end_dt and ee > start_dt:
+                    # Normaliza start_dt/end_dt para naive (evita TypeError de fuso horário)
+                    start_naive = start_dt.replace(tzinfo=None)
+                    end_naive = end_dt.replace(tzinfo=None)
+                    if es < end_naive and ee > start_naive:
                         has_outlook_conflict = True
                         break
             except Exception as e:
@@ -652,12 +655,15 @@ async def create_meeting(
                 evt_start_str = evt.get("start", {}).get("dateTime", "")
                 evt_end_str = evt.get("end", {}).get("dateTime", "")
                 try:
-                    evt_start = datetime.fromisoformat(evt_start_str)
-                    evt_end = datetime.fromisoformat(evt_end_str)
+                    evt_start = datetime.fromisoformat(evt_start_str).replace(tzinfo=None)
+                    evt_end = datetime.fromisoformat(evt_end_str).replace(tzinfo=None)
                 except (ValueError, TypeError):
                     continue
+                # Normaliza start_dt/end_dt para naive (evita TypeError de fuso horário)
+                start_naive = start_dt.replace(tzinfo=None)
+                end_naive = end_dt.replace(tzinfo=None)
                 # Verifica sobreposição
-                if evt_start < end_dt and evt_end > start_dt:
+                if evt_start < end_naive and evt_end > start_naive:
                     # Buscar salas alternativas disponíveis
                     available_rooms = await _find_available_rooms(
                         db, start_dt, end_dt, meeting_data.room_id
@@ -928,11 +934,14 @@ async def check_availability(
                     evt_s = evt.get("start", {}).get("dateTime", "")
                     evt_e = evt.get("end", {}).get("dateTime", "")
                     try:
-                        es = datetime.fromisoformat(evt_s)
-                        ee = datetime.fromisoformat(evt_e)
+                        es = datetime.fromisoformat(evt_s).replace(tzinfo=None)
+                        ee = datetime.fromisoformat(evt_e).replace(tzinfo=None)
                     except (ValueError, TypeError):
                         continue
-                    if es < end_dt and ee > start_dt:
+                    # Normaliza start_dt/end_dt para naive também (evita TypeError de fuso horário)
+                    start_naive = start_dt.replace(tzinfo=None)
+                    end_naive = end_dt.replace(tzinfo=None)
+                    if es < end_naive and ee > start_naive:
                         outlook_conflict = {
                             "title": evt.get("subject", "Reunião Outlook"),
                             "start": es.isoformat(),

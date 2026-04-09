@@ -29,6 +29,7 @@ function Header({ onMenuClick }) {
     const getInitials = (name) => {
         if (!name) return 'U'
         return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+
     }
 
     return (
@@ -70,7 +71,17 @@ function Header({ onMenuClick }) {
                 >
                     <LogOut size={20} />
                 </button>
+
             </div>
+            {/* <div className="header-actions">
+                <button
+                    className="btn btn-ghost btn-icon"
+                    onClick={backPage}
+                    title="Voltar"
+                >
+                    <ChevronLeft size={20} />
+                </button>                
+            </div>     */}
         </header>
     )
 }

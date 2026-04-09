@@ -15,9 +15,18 @@
 
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useMsal } from '@azure/msal-react'
-import { InteractionRequiredAuthError } from '@azure/msal-browser'
+import { InteractionRequiredAuthError, InteractionStatus } from '@azure/msal-browser'
 import api from '../services/api'
 import { loginRequest } from '../services/authConfig'
+
+/**
+ * Detecta se o usuário está em um dispositivo móvel.
+ * Verifica o userAgent para identificar Android, iPhone, iPad, etc.
+ * Usado para decidir entre loginPopup (desktop) e loginRedirect (mobile).
+ */
+function isMobileDevice() {
+    return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
+}
 
 // Cria o contexto de autenticação (valor inicial: null)
 const AuthContext = createContext(null)
@@ -36,19 +45,75 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true)         // Carregando sessão salva?
     const [isAuthenticated, setIsAuthenticated] = useState(false)  // Está logado?
 
-    // Instância do MSAL para interações com a Microsoft
-    const { instance: msalInstance } = useMsal()
+    // inProgress indica o estado atual do MSAL:
+    // Startup → HandleRedirect → None (pronto)
+    const { instance: msalInstance, inProgress } = useMsal()
 
     useEffect(() => {
+        /**
+         * Aguarda o MsalProvider terminar todo processamento (incluindo
+         * handleRedirectPromise interno) antes de agir.
+         *
+         * Por que NÃO chamamos handleRedirectPromise() manualmente:
+         * O MsalProvider já chama internamente. Se chamamos de novo, o resultado
+         * já foi consumido e retorna null — o token do redirect desaparece.
+         *
+         * A abordagem correta é esperar inProgress === None e então:
+         * - Se há conta MSAL mas sem token backend → redirect mobile completou
+         *   → pegar token silenciosamente e chamar o backend
+         * - Senão → restaurar sessão do localStorage (login anterior)
+         */
+        if (inProgress !== InteractionStatus.None) return
+
+        const accounts = msalInstance.getAllAccounts()
+        const hasBackendSession = Boolean(localStorage.getItem('token'))
+
+        if (accounts.length > 0 && !hasBackendSession) {
+            // ── Caso: redirect mobile completou ──
+            // MsalProvider processou o redirect e tem uma conta autenticada,
+            // mas ainda não temos sessão no nosso backend.
+            // Adquire token silenciosamente (sem nova interação do usuário).
+            msalInstance
+                .acquireTokenSilent({ ...loginRequest, account: accounts[0] })
+                .then(async (tokenResponse) => {
+                    const response = await api.post('/api/auth/microsoft', {
+                        access_token: tokenResponse.accessToken
+                    })
+                    const userData = response.data.user
+                    const token = response.data.access_token
+
+                    localStorage.setItem('user', JSON.stringify(userData))
+                    localStorage.setItem('token', token)
+                    setUser(userData)
+                    setIsAuthenticated(true)
+                })
+                .catch((err) => {
+                    console.error('[Auth] Erro ao adquirir token após redirect:', err)
+                    restoreLocalSession()
+                })
+                .finally(() => setLoading(false))
+        } else {
+            // ── Caso normal: sem redirect pendente ──
+            // Restaura sessão salva do localStorage (login anterior).
+            restoreLocalSession()
+            setLoading(false)
+        }
+    }, [inProgress]) // Re-executa sempre que o estado do MSAL muda
+
+    /** Restaura sessão salva no localStorage, se houver. */
+    function restoreLocalSession() {
         const savedUser = localStorage.getItem('user')
         const savedToken = localStorage.getItem('token')
-
         if (savedUser && savedToken) {
-            setUser(JSON.parse(savedUser))
-            setIsAuthenticated(true)
+            try {
+                setUser(JSON.parse(savedUser))
+                setIsAuthenticated(true)
+            } catch {
+                localStorage.removeItem('user')
+                localStorage.removeItem('token')
+            }
         }
-        setLoading(false)
-    }, [])
+    }
 
     /**
      * Faz login com email e senha.
@@ -97,7 +162,19 @@ export function AuthProvider({ children }) {
      */
 
     const loginMicrosoft = async () => {
+        const mobile = isMobileDevice()
+        console.log(`[Auth] Dispositivo: ${mobile ? 'Mobile → loginRedirect' : 'Desktop → loginPopup'}`)
+
         try {
+            if (mobile) {
+                // ── MOBILE: usa redirect — não abre popup (bloqueado pelos browsers) ──
+                // A função não retorna resultado aqui; o login é concluído quando
+                // a Microsoft redireciona de volta e o handleRedirectPromise() processa.
+                await msalInstance.loginRedirect(loginRequest)
+                return  // Navegação sairá da página — execução para aqui
+            }
+
+            // ── DESKTOP: usa popup — experiência mais fluida sem sair da página ──
             const result = await msalInstance.loginPopup(loginRequest)
 
             const microsoftToken = result.accessToken
@@ -116,13 +193,14 @@ export function AuthProvider({ children }) {
             return userData
         } catch (error) {
             if (error?.errorCode === 'interaction_in_progress') {
-                console.warn('Interação em progresso, tentando novamente...')
-                return loginMicrosoft()
+                // Conflito de interação — limpa e tenta novamente
+                console.warn('[Auth] interaction_in_progress — aguardando...')
+                return
             }
             if (error instanceof InteractionRequiredAuthError) {
-                console.warn('Interação necessária para login Microsoft')
+                console.warn('[Auth] Interação necessária para login Microsoft')
             }
-            console.error('Microsoft login error:', error)
+            console.error('[Auth] Microsoft login error:', error)
             throw error
         }
     }
