@@ -702,7 +702,7 @@ async def create_meeting(
                     raise HTTPException(
                         status_code=409,
                         detail={
-                            "message": f"Conflito com evento no Outlook: '{evt.get('subject', 'Reunião')}'",
+                            "message": f"Esta sala já está reservada por: {evt.get('organizer', {}).get('emailAddress', {}).get('name', 'Usuário Outlook')}",
                             "conflict": {
                                 "title": evt.get("subject", "Reunião Outlook"),
                                 "start": evt_start.isoformat(),
@@ -1043,7 +1043,7 @@ async def check_availability(
         available_rooms = await _find_available_rooms(db, start_dt, end_dt, room_id)
         
         response["conflict"] = {
-            "message": f"Conflito com evento no Outlook/Teams: '{outlook_conflict['title']}'",
+            "message": f"Está sala já está reservada por: '{outlook_conflict['organizer']}'",
             "meeting": {
                 "title": outlook_conflict["title"],
                 "start": outlook_conflict["start"],
