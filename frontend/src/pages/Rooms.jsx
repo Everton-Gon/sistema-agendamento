@@ -525,23 +525,23 @@ function Rooms() {
                                                             key={`busy-${index}`}
                                                             style={{
                                                                 padding: 'var(--space-sm) var(--space-md)',
-                                                                backgroundColor: isOutlook ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                                                                backgroundColor: isOutlook ? 'rgba(241, 99, 99, 0.02)' : 'var(--bg-secondary)',
                                                                 borderRadius: 'var(--radius-md)',
-                                                                borderLeft: `3px solid ${isOutlook ? '#6366f1' : room.color}`,
+                                                                borderLeft: `3px solid ${isOutlook ? '#e41e1e' : room.color}`,
                                                                 opacity: isHovered ? 0.7 : 1,
                                                                 transition: 'opacity 0.2s ease'
                                                             }}
                                                         >
                                                             <div className="flex items-center gap-sm">
-                                                                <Clock size={14} style={{ color: isOutlook ? '#6366f1' : 'var(--text-secondary)' }} />
+                                                                <Clock size={14} style={{ color: isOutlook ? '#e41e1e' : 'var(--text-secondary)' }} />
                                                                 <span className="text-sm font-medium">
                                                                     {item.start} — {item.end}
                                                                 </span>
                                                                 {isOutlook && (
                                                                     <span style={{
                                                                         fontSize: '10px',
-                                                                        backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                                                                        color: '#6366f1',
+                                                                        backgroundColor: 'rgba(228, 30, 30, 0.15)',
+                                                                        color: '#e41e1e',
                                                                         padding: '1px 6px',
                                                                         borderRadius: '8px',
                                                                         fontWeight: 600,
@@ -553,7 +553,7 @@ function Rooms() {
                                                             </div>
                                                             <p className="text-sm" style={{
                                                                 marginTop: '2px',
-                                                                color: isOutlook ? '#6366f1' : 'var(--text-secondary)',
+                                                                color: isOutlook ? '#e41e1e' : 'var(--text-secondary)',
                                                                 overflow: 'hidden',
                                                                 textOverflow: 'ellipsis',
                                                                 whiteSpace: 'nowrap'

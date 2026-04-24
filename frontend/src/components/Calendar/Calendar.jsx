@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
     format,
     startOfMonth,
@@ -21,7 +22,7 @@ import {
     isToday
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw, Plus, Search } from 'lucide-react'
 
 function useIsMobile() {
     const [isMobile, setIsMobile] = useState(
@@ -38,11 +39,20 @@ function useIsMobile() {
 }
 
 function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh }) {
+    const navigate = useNavigate()
     const [currentDate, setCurrentDate] = useState(new Date())
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [selectedRoom, setSelectedRoom] = useState(null)
     const [hoveredDay, setHoveredDay] = useState(null)
+    const [popoverDay, setPopoverDay] = useState(null)
     const [viewMode, setViewMode] = useState('month') // 'day' | 'week' | 'month'
+
+    // Fecha o popover fixado ao clicar fora do calendário
+    useEffect(() => {
+        const closePopover = () => setPopoverDay(null)
+        window.addEventListener('click', closePopover)
+        return () => window.removeEventListener('click', closePopover)
+    }, [])
 
     const isMobile = useIsMobile()
 
@@ -123,6 +133,46 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
         <style>{`
             @keyframes spin-refresh { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
             .refreshing { animation: spin-refresh 0.8s linear infinite; }
+            .calendar-day-popover-actions {
+                display: flex;
+                gap: 8px;
+                padding: 8px;
+                border-top: 1px solid var(--border-color);
+                background: var(--bg-secondary, #f9fafb);
+            }
+            .btn-popover-action {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                padding: 7px 8px;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: var(--radius-sm, 6px);
+                cursor: pointer;
+                border: 1px solid var(--border-color);
+                background: white;
+                color: var(--text-primary);
+                transition: all 0.15s;
+            }
+            .btn-popover-action.primary {
+                background: var(--primary-500, #6366f1);
+                color: white;
+                border-color: var(--primary-600, #4f46e5);
+            }
+            .btn-popover-action:hover {
+                filter: brightness(0.95);
+                transform: translateY(-1px);
+            }
+            .calendar-day-popover {
+                top: 100%;
+                bottom: auto;
+            }
+            .calendar-day-popover.popover-top {
+                top: auto;
+                bottom: 100%;
+            }
         `}</style>
     )
 
@@ -148,28 +198,26 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
 
             <h2 className="calendar-title">{getPeriodTitle()}</h2>
 
-            {/* Seletor de visualização */}
-            <div style={{ width: '160px' }} className="hide-mobile">
-                <select
-                    value={viewMode}
-                    onChange={(e) => setViewMode(e.target.value)}
-                    style={{
-                        padding: '6px 12px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        fontSize: 'var(--font-size-sm)',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        width: '100%',
-                        outline: 'none'
-                    }}
+            {/* Seletor de visualização — grupo de botões */}
+            <div className="view-group hide-mobile">
+                <button
+                    className={`btn-view ${viewMode === 'day' ? 'active' : ''}`}
+                    onClick={() => setViewMode('day')}
                 >
-                    <option value="day">Dia</option>
-                    <option value="week">Semana</option>
-                    <option value="month">Mês</option>
-                </select>
+                    Dia
+                </button>
+                <button
+                    className={`btn-view ${viewMode === 'week' ? 'active' : ''}`}
+                    onClick={() => setViewMode('week')}
+                >
+                    Semana
+                </button>
+                <button
+                    className={`btn-view ${viewMode === 'month' ? 'active' : ''}`}
+                    onClick={() => setViewMode('month')}
+                >
+                    Mês
+                </button>
             </div>
         </div>
     )
@@ -282,6 +330,64 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  LÓGICA DE COLUNAS: Detecta reuniões sobrepostas e distribui lado a lado
+    // ═══════════════════════════════════════════════════════════════════
+    const getPositionedEvents = (dayEvents) => {
+        const sorted = [...dayEvents].sort(
+            (a, b) => new Date(a.start) - new Date(b.start)
+        );
+
+        const clusters = [];
+
+        sorted.forEach(event => {
+            const start = new Date(event.start);
+            const end   = new Date(event.end);
+            const target = clusters.find(c =>
+                c.some(e => start < new Date(e.end) && end > new Date(e.start))
+            );
+            if (target) target.push(event);
+            else clusters.push([event]);
+        });
+
+        const result = [];
+
+        clusters.forEach(cluster => {
+            const columns = [];
+            const colMap = new Map(); // chave = referência original do objeto
+
+            cluster.forEach(event => {
+                const eStart = new Date(event.start);
+                const eEnd   = new Date(event.end);
+
+                let colIndex = columns.findIndex(col =>
+                    col.every(e => eStart >= new Date(e.end) || eEnd <= new Date(e.start))
+                );
+
+                if (colIndex === -1) {
+                    columns.push([event]);
+                    colIndex = columns.length - 1;
+                } else {
+                    columns[colIndex].push(event);
+                }
+
+                colMap.set(event, colIndex); // ✅ referência original como chave
+            });
+
+            const totalCols = columns.length;
+
+            cluster.forEach(event => {
+                result.push({
+                    ...event,
+                    colIndex: colMap.get(event), // ✅ busca pela referência original
+                    totalCols,                   // ✅ valor final sem necessidade de correção
+                });
+            });
+        });
+
+        return result;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════
     //  VISÃO DIA / SEMANA: Grade de horários vertical
     // ═══════════════════════════════════════════════════════════════════
     if (viewMode === 'week' || viewMode === 'day') {
@@ -332,32 +438,49 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
                                             <div key={hour} className="time-slot-line"
                                                 style={{ top: `${(hour - GRID_START) * SLOT_HEIGHT}px` }} />
                                         ))}
-                                        {/* Eventos */}
-                                        {dayEvents
-                                            .filter(e => {
-                                                const h = new Date(e.start).getHours()
-                                                return h >= GRID_START && h <= GRID_END
+                                        {/* Eventos com layout de colunas lado a lado */}
+                                        {getPositionedEvents(
+                                            dayEvents.filter(e => {
+                                                const h = new Date(e.start).getHours();
+                                                return h >= GRID_START && h <= GRID_END;
                                             })
-                                            .map((event, ei) => (
-                                                <div key={ei} className="time-grid-event"
+                                        ).map((event, ei) => {
+                                            const width = 100 / event.totalCols;
+                                            const left  = event.colIndex * width;
+                                            return (
+                                                <div
+                                                    key={ei}
+                                                    className="time-grid-event"
                                                     style={{
-                                                        top: `${getEventTop(event)}px`,
-                                                        height: `${getEventHeight(event)}px`,
-                                                        backgroundColor: event.room_color || '#6366f1'
+                                                        top:             `${getEventTop(event)}px`,
+                                                        height:          `${getEventHeight(event)}px`,
+                                                        backgroundColor: event.room_color || '#6366f1',
+                                                        width:           `calc(${width}% - 4px)`,
+                                                        left:            `${left}%`,
+                                                        zIndex:          event.colIndex + 1,
+                                                        borderRight:     event.totalCols > 1
+                                                            ? '1px solid rgba(255,255,255,0.3)'
+                                                            : 'none',
                                                     }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        onEventClick && onEventClick(event)
+                                                    onClick={e => {
+                                                        e.stopPropagation();
+                                                        onEventClick && onEventClick(event);
                                                     }}
-                                                    title={`${event.title} - ${event.room_name}`}>
+                                                    title={`${event.title}\nSala: ${event.room_name}\nOrganizado por: ${event.organizer_name || 'Desconhecido'}`}
+                                                >
                                                     <span className="time-grid-event-time">
                                                         {event.teams_link && '🎥 '}
                                                         {format(new Date(event.start), 'HH:mm')}
                                                     </span>
-                                                    <span className="time-grid-event-title">{event.title}</span>
+                                                    <span
+                                                        className="time-grid-event-title"
+                                                        style={{ fontSize: event.totalCols > 2 ? '10px' : '11px' }}
+                                                    >
+                                                        {event.title}
+                                                    </span>
                                                 </div>
-                                            ))
-                                        }
+                                            );
+                                        })}
                                     </div>
                                 )
                             })}
@@ -384,14 +507,20 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
                     const dayEvents = getEventsForDay(day)
                     const isCurrentMonth = isSameMonth(day, currentDate)
                     const isDayToday = isToday(day)
-                    const isHovered = hoveredDay === index
+                    // Calcula em qual linha da grade este dia está (0-based)
+                    const rowIndex = Math.floor(index / 7)
+                    const totalRows = Math.ceil(days.length / 7)
+                    const isLastTwoRows = rowIndex >= totalRows - 2
                     return (
                         <div key={index}
                             className={`calendar-day ${!isCurrentMonth ? 'other-month' : ''} ${isDayToday ? 'today' : ''}`}
-                            onClick={() => onDayClick && onDayClick(day)}
-                            onMouseEnter={() => dayEvents.length > 0 && setHoveredDay(index)}
+                            onMouseEnter={() => setHoveredDay(index)}
                             onMouseLeave={() => setHoveredDay(null)}
-                            style={{ position: 'relative' }}>
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                setPopoverDay(popoverDay === index ? null : index)
+                            }}
+                            style={{ position: 'relative', cursor: 'pointer' }}>
                             <div className="calendar-day-number">
                                 {isDayToday ? (
                                     <span style={{
@@ -418,40 +547,70 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
                                     </div>
                                 )}
                             </div>
-                            {isHovered && dayEvents.length > 0 && (
-                                <div className="calendar-day-popover">
+                            {(hoveredDay === index || popoverDay === index) && (
+                                <div
+                                    className={`calendar-day-popover ${isLastTwoRows ? 'popover-top' : ''}`}
+                                    onClick={e => e.stopPropagation()}>
                                     <div className="calendar-day-popover-header">
                                         {format(day, "d 'de' MMMM", { locale: ptBR })}
                                         <span className="calendar-day-popover-count">
                                             {dayEvents.length} {dayEvents.length === 1 ? 'reunião' : 'reuniões'}
                                         </span>
                                     </div>
-                                    <div className="calendar-day-popover-events">
-                                        {dayEvents.map((event, eventIndex) => (
-                                            <div key={eventIndex} className="calendar-day-popover-event"
-                                                onClick={(e) => { e.stopPropagation(); onEventClick && onEventClick(event) }}>
-                                                <div className="calendar-day-popover-dot"
-                                                    style={{ backgroundColor: event.room_color || '#6366f1' }} />
-                                                <div className="calendar-day-popover-event-info">
-                                                    <span className="calendar-day-popover-time">
-                                                        {event.teams_link && '🎥 '}
-                                                        {format(new Date(event.start), 'HH:mm')} — {format(new Date(event.end), 'HH:mm')}
-                                                    </span>
-                                                    <span className="calendar-day-popover-title">{event.title}</span>
-                                                    <span className="calendar-day-popover-room">
-                                                        {event.room_name}
-                                                        {event.source === 'outlook' && (
-                                                            <span style={{
-                                                                fontSize: '9px', backgroundColor: 'rgba(99,102,241,0.15)',
-                                                                color: '#6366f1', padding: '1px 5px',
-                                                                borderRadius: '6px', fontWeight: 600, marginLeft: '6px'
-                                                            }}>📅 Outlook</span>
-                                                        )}
-                                                    </span>
+                                    {dayEvents.length > 0 && (
+                                        <div className="calendar-day-popover-events">
+                                            {dayEvents.map((event, eventIndex) => (
+                                                <div key={eventIndex} className="calendar-day-popover-event"
+                                                    onClick={(e) => { e.stopPropagation(); onEventClick && onEventClick(event) }}>
+                                                    <div className="calendar-day-popover-dot"
+                                                        style={{ backgroundColor: event.room_color || '#6366f1' }} />
+                                                    <div className="calendar-day-popover-event-info">
+                                                        <span className="calendar-day-popover-time">
+                                                            {event.teams_link && '🎥 '}
+                                                            {format(new Date(event.start), 'HH:mm')} — {format(new Date(event.end), 'HH:mm')}
+                                                        </span>
+                                                        <span className="calendar-day-popover-title">{event.title}</span>
+                                                        <span className="calendar-day-popover-room">
+                                                            {event.room_name}
+                                                            {event.source === 'outlook' && (
+                                                                <span style={{
+                                                                    fontSize: '9px', backgroundColor: 'rgba(99,102,241,0.15)',
+                                                                    color: '#6366f1', padding: '1px 5px',
+                                                                    borderRadius: '6px', fontWeight: 600, marginLeft: '6px'
+                                                                }}>📅 Outlook</span>
+                                                            )}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* Botões aparecem apenas quando fixado por clique */}
+                                    {popoverDay === index && (
+                                        <div className="calendar-day-popover-actions">
+                                            <button
+                                                className="btn-popover-action primary"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setPopoverDay(null)
+                                                    navigate(`/new-meeting?date=${format(day, 'yyyy-MM-dd')}`)
+                                                }}
+                                            >
+                                                <Plus size={14} /> Agendar
+                                            </button>
+                                            <button
+                                                className="btn-popover-action"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setPopoverDay(null)
+                                                    setCurrentDate(day)
+                                                    setViewMode('day')
+                                                }}
+                                            >
+                                                <Search size={14} /> Ver detalhes
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

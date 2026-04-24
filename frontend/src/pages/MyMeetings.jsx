@@ -35,6 +35,7 @@ import {
     Trash2,
     AlertCircle,
     CheckCircle,
+    CheckCircle2,
     X,
     UserX,
     RefreshCw
@@ -204,6 +205,31 @@ function MyMeetings() {
             ? 'decline'
             : 'cancel'
         setConfirmAction({ meeting, action })
+    }
+
+    /**
+     * Aceita um convite de reunião do Outlook onde o usuário é PARTICIPANTE.
+     * Chama POST /me/events/{eventId}/accept via outlookService.
+     */
+    const handleAcceptOutlook = async (meeting) => {
+        setProcessing(true)
+        try {
+            const success = await outlookService.acceptOutlookEvent(
+                msalInstance,
+                meeting.outlook_event_id
+            )
+            if (success) {
+                setSuccessMessage('Convite aceito com sucesso! O organizador foi notificado.')
+                setSelectedMeeting(null)
+            } else {
+                setSuccessMessage('Erro ao aceitar o convite. Tente novamente.')
+            }
+        } catch (err) {
+            console.error('Erro ao aceitar convite:', err)
+            setSuccessMessage('Erro ao aceitar o convite. Tente novamente.')
+        } finally {
+            setProcessing(false)
+        }
     }
 
     if (loading) {
@@ -432,7 +458,33 @@ function MyMeetings() {
                 size="lg"
                 footer={
                     <>
-                        {/* Botão de ação principal no footer do modal */}
+                        {/* Botão Aceitar (apenas para participante de evento Outlook futuro) */}
+                        {selectedMeeting &&
+                            selectedMeeting.source === 'outlook' &&
+                            !selectedMeeting.is_organizer &&
+                            new Date(selectedMeeting.start_datetime) >= new Date() && (
+                            <button
+                                className="btn"
+                                onClick={() => handleAcceptOutlook(selectedMeeting)}
+                                disabled={processing}
+                                style={{
+                                    backgroundColor: '#22c55e',
+                                    color: 'white',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}
+                            >
+                                {processing ? (
+                                    <><div className="spinner spinner-sm" style={{ borderTopColor: 'white' }} /> Aceitando...</>
+                                ) : (
+                                    <><CheckCircle2 size={16} /> Aceitar Convite</>
+                                )}
+                            </button>
+                        )}
+
+                        {/* Botão Recusar/Cancelar (apenas para eventos futuros) */}
                         {selectedMeeting && new Date(selectedMeeting.start_datetime) >= new Date() && (
                             <button
                                 className={`btn ${selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer ? 'btn-warning' : 'btn-danger'}`}

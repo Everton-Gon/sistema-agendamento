@@ -79,7 +79,7 @@
   --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.4);
 
   /* Typography */
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;
@@ -1635,4 +1635,44 @@ a:hover {
   .sidebar {
     display: none; /* Geralmente em totens deixamos a barra lateral escondida por padrão */
   }
+}
+
+/* =============================================
+   Seletor de Visualização do Calendário (Dia/Semana/Mês)
+   ============================================= */
+.view-group {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.btn-view {
+  padding: 6px 14px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+  white-space: nowrap;
+}
+
+.btn-view:last-child {
+  border-right: none;
+}
+
+.btn-view:hover:not(.active) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.btn-view.active {
+  background: var(--primary-500);
+  color: #fff;
+  font-weight: 600;
 }

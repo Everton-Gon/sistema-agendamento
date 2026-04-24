@@ -82,9 +82,11 @@ function NewMeeting() {
     const [checkingAvailability, setCheckingAvailability] = useState(false) // Verificando?
     const [availabilityStatus, setAvailabilityStatus] = useState(null)     // Resultado da verificação
     const [suggestedRooms, setSuggestedRooms] = useState([])    // Salas alternativas
-    const [suggestions, setSuggestions] = useState([])     // Pessoas encontradas
+    const [suggestions, setSuggestions] = useState([])      // Pessoas encontradas
     const [showSuggestions, setShowSuggestions] = useState(false) // Mostra/esconde o menu
     const [isSearching, setIsSearching] = useState(false)   // Status da busca
+    const [focusedIndex, setFocusedIndex] = useState(-1)    // Item focado pelo teclado
+    const itemRefs = useRef([])                              // Refs para auto-scroll
 
     // Carrega lista de salas ao montar
     useEffect(() => {
@@ -102,6 +104,13 @@ function NewMeeting() {
             setSuggestedRooms([])
         }
     }, [formData.room_id, formData.date, formData.start_time, formData.end_time])
+
+    // Auto-scroll para o item focado pelo teclado
+    useEffect(() => {
+        if (focusedIndex >= 0 && itemRefs.current[focusedIndex]) {
+            itemRefs.current[focusedIndex].scrollIntoView({ block: 'nearest' })
+        }
+    }, [focusedIndex])
 
     /** Busca lista de salas do backend */
     async function loadRooms() {
@@ -190,6 +199,7 @@ function NewMeeting() {
     async function handleParticipantChange(e) {
         const value = e.target.value
         setParticipantEmail(value)
+        setFocusedIndex(-1) // reseta ao digitar
 
         // Esconde sugestões se não tiver @ ou campo vazio
         if (!value || !value.includes('@')) {
@@ -267,7 +277,7 @@ function NewMeeting() {
                 title: formData.title,
                 room_id: parseInt(formData.room_id),
                 start_datetime: `${formData.date}T${formData.start_time}:00`,
-                end_datetime: `${formData.date}T${formData.end_time}:00`,
+                end_datetime: `${formData.date}T${formData.end_time}:59`,
                 description: formData.description,
                 attendees: formData.participants.map(email => ({
                     email: email,
@@ -302,6 +312,25 @@ function NewMeeting() {
         } finally {
             setSubmitting(false)
         }
+    }
+
+    /**
+     * Preenche os campos de horário com base no atalho selecionado.
+     * - manha: 08:00 - 11:59
+     * - tarde: 12:00 - 18:00
+     * - dia:   08:00 - 18:00
+     */
+    function handleQuickTime(type) {
+        const times = {
+            manha: { start: '08:00', end: '11:59' },
+            tarde: { start: '12:00', end: '18:00' },
+            dia:   { start: '08:00', end: '18:00' },
+        }
+        setFormData(prev => ({
+            ...prev,
+            start_time: times[type].start,
+            end_time:   times[type].end,
+        }))
     }
 
     // Tela de carregamento (enquanto carrega salas)
@@ -415,6 +444,45 @@ function NewMeeting() {
                                 />
                                 {errors.end_time && <span className="input-error-text">{errors.end_time}</span>}
                             </div>
+                        </div>
+
+                        {/* ====== ATALHOS DE HORÁRIO ====== */}
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+                            {[
+                                { key: 'manha', label: '🌅 Manhã toda', desc: '08:00 - 11:59' },
+                                { key: 'tarde', label: '🌇 Tarde toda',  desc: '12:00 - 18:00' },
+                                { key: 'dia',   label: '📅 Dia todo',    desc: '08:00 - 18:00' },
+                            ].map(({ key, label, desc }) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => handleQuickTime(key)}
+                                    title={desc}
+                                    style={{
+                                        padding: '5px 14px',
+                                        borderRadius: '999px',
+                                        border: '1px solid var(--border-color)',
+                                        background: 'var(--bg-secondary)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '13px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        fontWeight: 500,
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.background = 'var(--primary-50)'
+                                        e.currentTarget.style.color = 'var(--primary)'
+                                        e.currentTarget.style.borderColor = 'var(--primary)'
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.background = 'var(--bg-secondary)'
+                                        e.currentTarget.style.color = 'var(--text-secondary)'
+                                        e.currentTarget.style.borderColor = 'var(--border-color)'
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
                         </div>
 
                         {/* ====== INDICADOR DE DISPONIBILIDADE ====== */}
@@ -763,11 +831,23 @@ function NewMeeting() {
                                         value={participantEmail}
                                         onChange={handleParticipantChange}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
+                                            if (e.key === 'ArrowDown') {
                                                 e.preventDefault()
-                                                if (!showSuggestions) addParticipant()
+                                                setFocusedIndex(prev => Math.min(prev + 1, suggestions.length - 1))
+                                            } else if (e.key === 'ArrowUp') {
+                                                e.preventDefault()
+                                                setFocusedIndex(prev => Math.max(prev - 1, 0))
+                                            } else if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                if (showSuggestions && focusedIndex >= 0) {
+                                                    addParticipant(suggestions[focusedIndex].email)
+                                                } else if (!showSuggestions) {
+                                                    addParticipant()
+                                                }
+                                            } else if (e.key === 'Escape') {
+                                                setShowSuggestions(false)
+                                                setFocusedIndex(-1)
                                             }
-                                            if (e.key === 'Escape') setShowSuggestions(false)
                                         }}
                                         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                                         className="input"
@@ -795,7 +875,7 @@ function NewMeeting() {
                                         border: '1px solid var(--border)',
                                         borderRadius: 'var(--radius-lg)',
                                         boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                                        zIndex: 9999, // Aumentado para não ser cortado
+                                        zIndex: 9999,
                                         overflow: 'hidden',
                                         maxHeight: '280px',
                                         overflowY: 'auto'
@@ -822,23 +902,25 @@ function NewMeeting() {
                                                 Nenhum usuário encontrado
                                             </div>
                                         ) : (
-                                            suggestions.map((user) => (
+                                            suggestions.map((user, idx) => (
                                                 <div
                                                     key={user.email}
+                                                    ref={el => itemRefs.current[idx] = el}
                                                     onMouseDown={(e) => {
                                                         e.preventDefault()
                                                         addParticipant(user.email)
                                                     }}
+                                                    onMouseEnter={() => setFocusedIndex(idx)}
+                                                    onMouseLeave={() => setFocusedIndex(-1)}
                                                     style={{
                                                         display: 'flex',
                                                         alignItems: 'center',
                                                         gap: 'var(--space-sm)',
                                                         padding: '10px var(--space-md)',
                                                         cursor: 'pointer',
-                                                        transition: 'background 0.15s'
+                                                        transition: 'background 0.15s',
+                                                        background: focusedIndex === idx ? 'var(--primary-50)' : 'transparent'
                                                     }}
-                                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--primary-50)'}
-                                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                                 >
                                                     {/* Avatar com inicial */}
                                                     <div style={{

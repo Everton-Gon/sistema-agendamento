@@ -307,5 +307,47 @@ export const outlookService = {
             console.error('[outlookService] Erro ao recusar evento Outlook:', err)
             return false
         }
+    },
+
+    /**
+     * Aceita um evento do Outlook onde o usuário é PARTICIPANTE.
+     *
+     * POST /me/events/{eventId}/accept
+     * Marca o evento como aceito no calendário do usuário.
+     * O organizador recebe notificação de que o usuário aceitou.
+     *
+     * @param {PublicClientApplication} msalInstance - Instância do MSAL
+     * @param {string} eventId - ID do evento no Graph API (outlook_event_id)
+     * @returns {boolean} true se aceitou com sucesso
+     */
+    async acceptOutlookEvent(msalInstance, eventId) {
+        const token = await getGraphToken(msalInstance)
+        if (!token) return false
+
+        try {
+            const response = await fetch(`${GRAPH_API_BASE}/me/events/${eventId}/accept`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    sendResponse: true  // Notifica o organizador
+                })
+            })
+
+            if (response.status === 202) { // 202 Accepted
+                console.log('[outlookService] Evento aceito com sucesso')
+                return true
+            }
+
+            const error = await response.json()
+            console.error('[outlookService] Erro ao aceitar evento:', error)
+            return false
+
+        } catch (err) {
+            console.error('[outlookService] Erro ao aceitar evento Outlook:', err)
+            return false
+        }
     }
 }

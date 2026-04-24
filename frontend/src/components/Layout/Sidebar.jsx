@@ -57,7 +57,8 @@ function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }) {
             <div className="sidebar-header" style={{ justifyContent: 'flex-start' }}>
                 <div className="sidebar-logo">
                     <div className="sidebar-logo-icon">
-                        <Calendar size={24} />
+                        {/* <Calendar size={24} /> */}
+                        <img src="/mallory-logo.png" alt="Logo" width={24} height={auto} />
                     </div>
                     {!collapsed && (
                         <span className="sidebar-logo-text hide-mobile">Agendamento</span>
