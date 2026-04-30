@@ -19,7 +19,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useMsal } from '@azure/msal-react'
 import { useAuth } from '../contexts/AuthContext'
 import { meetingService } from '../services/meetingService'
@@ -38,11 +38,13 @@ import {
     CheckCircle2,
     X,
     UserX,
-    RefreshCw
+    RefreshCw,
+    Pencil
 } from 'lucide-react'
 
 function MyMeetings() {
     const location = useLocation()
+    const navigate = useNavigate()
     const { user } = useAuth()
     const { instance: msalInstance } = useMsal()
 
@@ -205,6 +207,17 @@ function MyMeetings() {
             ? 'decline'
             : 'cancel'
         setConfirmAction({ meeting, action })
+    }
+
+    /** Navega para o formulário de edição com os dados da reunião */
+    const handleEditMeeting = (e, meeting) => {
+        e.stopPropagation()
+        navigate('/new-meeting', {
+            state: {
+                editMeeting: meeting,
+                returnTo: '/my-meetings'
+            }
+        })
     }
 
     /**
@@ -434,15 +447,29 @@ function MyMeetings() {
                                         </div>
                                     </div>
 
-                                    {/* Botão de ação: Cancelar ou Recusar */}
-                                    <button
-                                        onClick={(e) => handleActionClick(e, meeting)}
-                                        className="btn btn-ghost btn-icon"
-                                        title={actionBtn.title}
-                                        style={{ color: actionBtn.color }}
-                                    >
-                                        {actionBtn.icon}
-                                    </button>
+                                    {/* Botões de ação: Editar (organizador) + Cancelar/Recusar */}
+                                    <div className="flex gap-sm" style={{ flexShrink: 0 }}>
+                                        {/* Botão Editar — apenas para organizador de reuniões locais futuras */}
+                                        {(meeting.source === 'local' || meeting.is_organizer) &&
+                                            new Date(meeting.start_datetime) >= new Date() && (
+                                            <button
+                                                onClick={(e) => handleEditMeeting(e, meeting)}
+                                                className="btn btn-ghost btn-icon"
+                                                title="Editar reunião"
+                                                style={{ color: 'var(--color-primary, #e07820)' }}
+                                            >
+                                                <Pencil size={18} />
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={(e) => handleActionClick(e, meeting)}
+                                            className="btn btn-ghost btn-icon"
+                                            title={actionBtn.title}
+                                            style={{ color: actionBtn.color }}
+                                        >
+                                            {actionBtn.icon}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )
@@ -457,29 +484,41 @@ function MyMeetings() {
                 title="Detalhes da Reunião"
                 size="lg"
                 footer={
-                    <>
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'row',
+                        gap: '8px',
+                        justifyContent: 'space-between',
+                        flexWrap: 'nowrap',
+                        width: '100%'
+                    }}>
                         {/* Botão Aceitar (apenas para participante de evento Outlook futuro) */}
                         {selectedMeeting &&
                             selectedMeeting.source === 'outlook' &&
                             !selectedMeeting.is_organizer &&
                             new Date(selectedMeeting.start_datetime) >= new Date() && (
                             <button
-                                className="btn"
                                 onClick={() => handleAcceptOutlook(selectedMeeting)}
                                 disabled={processing}
                                 style={{
                                     backgroundColor: '#22c55e',
                                     color: 'white',
                                     border: 'none',
+                                    borderRadius: '10px',
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '6px'
+                                    gap: '5px',
+                                    padding: '8px 14px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
                                 }}
                             >
                                 {processing ? (
                                     <><div className="spinner spinner-sm" style={{ borderTopColor: 'white' }} /> Aceitando...</>
                                 ) : (
-                                    <><CheckCircle2 size={16} /> Aceitar Convite</>
+                                    <><CheckCircle2 size={15} /> Aceitar</>
                                 )}
                             </button>
                         )}
@@ -487,7 +526,6 @@ function MyMeetings() {
                         {/* Botão Recusar/Cancelar (apenas para eventos futuros) */}
                         {selectedMeeting && new Date(selectedMeeting.start_datetime) >= new Date() && (
                             <button
-                                className={`btn ${selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer ? 'btn-warning' : 'btn-danger'}`}
                                 onClick={() => {
                                     const action = (selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer)
                                         ? 'decline'
@@ -495,20 +533,29 @@ function MyMeetings() {
                                     setConfirmAction({ meeting: selectedMeeting, action })
                                     setSelectedMeeting(null)
                                 }}
-                                style={selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer ? {
-                                    backgroundColor: '#f59e0b', color: 'white', border: 'none'
-                                } : {}}
+                                style={{
+                                    backgroundColor: selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer
+                                        ? '#f59e0b' : '#ef4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    padding: '8px 14px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
+                                }}
                             >
                                 {selectedMeeting.source === 'outlook' && !selectedMeeting.is_organizer
-                                    ? '✕ Recusar Convite'
-                                    : '✕ Cancelar Reunião'
+                                    ? <><UserX size={15} /> Recusar</>
+                                    : <><Trash2 size={15} /> Cancelar</>
                                 }
                             </button>
                         )}
-                        <button className="btn btn-secondary" onClick={() => setSelectedMeeting(null)}>
-                            Fechar
-                        </button>
-                    </>
+                    </div>
                 }
             >
                 {selectedMeeting && (

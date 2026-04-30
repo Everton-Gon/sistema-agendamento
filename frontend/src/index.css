@@ -478,6 +478,8 @@ a:hover {
   background-color: var(--bg-secondary);
 }
 
+
+
 /* Toast */
 .toast-container {
   position: fixed;
@@ -1471,9 +1473,11 @@ a:hover {
 /* Wrapper principal: horas à esquerda + dias à direita */
 .time-grid-wrapper {
   display: flex;
-  overflow-y: auto;
+  overflow-y: auto;       /* único scroll vertical */
+  overflow-x: auto;       /* scroll horizontal unificado */
   max-height: 700px;
   border-bottom: 1px solid var(--border-color);
+  position: relative;
 }
 
 /* Coluna de rótulos de hora */
@@ -1482,6 +1486,9 @@ a:hover {
   width: 56px;
   border-right: 1px solid var(--border-color);
   background-color: var(--bg-secondary);
+  position: sticky;       /* cola na esquerda ao rolar horizontalmente */
+  left: 0;
+  z-index: 3;
 }
 
 /* Espaço em branco para alinhar com os cabeçalhos dos dias */
@@ -1505,7 +1512,7 @@ a:hover {
 /* Área que contém cabeçalhos dos dias + colunas */
 .time-grid-days-area {
   flex: 1;
-  overflow-x: auto;
+  overflow: visible;      /* remove o segundo scroll — o wrapper cuida de tudo */
   min-width: 0;
 }
 

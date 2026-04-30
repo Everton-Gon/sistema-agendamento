@@ -20,22 +20,24 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Calendar from '../components/Calendar/Calendar'
 import Modal from '../components/Common/Modal'
 import { meetingService } from '../services/meetingService'
 import { roomService } from '../services/roomService'
 import { startOfMonth, endOfMonth, addMonths, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Clock, Building2, Users, User, X } from 'lucide-react'
+import { Clock, Building2, Users, User, X, Pencil, CheckCircle } from 'lucide-react'
 
 function CalendarPage() {
     const navigate = useNavigate()
+    const location = useLocation()
     const [events, setEvents] = useState([])            // Eventos do calendário
     const [rooms, setRooms] = useState([])              // Salas (para legenda de cores)
     const [loading, setLoading] = useState(true)         // Carregamento inicial
     const [selectedEvent, setSelectedEvent] = useState(null) // Evento selecionado no modal
     const [currentMonth, setCurrentMonth] = useState(new Date()) // Mês sendo exibido
+    const [successMessage, setSuccessMessage] = useState(location.state?.successMessage || null)
 
     // Recarrega dados quando o mês muda (navegação do Calendar)
     useEffect(() => {
@@ -109,6 +111,25 @@ function CalendarPage() {
         setSelectedEvent(event)
     }
 
+    /** Navega para edição da reunião, informando a rota de retorno */
+    const handleEditMeeting = (event) => {
+        setSelectedEvent(null)
+        navigate('/new-meeting', {
+            state: {
+                editMeeting: event,
+                returnTo: location.pathname  // '/calendar'
+            }
+        })
+    }
+
+    /** Limpa mensagem de sucesso após 5s */
+    useEffect(() => {
+        if (successMessage) {
+            const t = setTimeout(() => setSuccessMessage(null), 5000)
+            return () => clearTimeout(t)
+        }
+    }, [successMessage])
+
     // Tela de carregamento
     if (loading) {
         return (
@@ -120,6 +141,31 @@ function CalendarPage() {
 
     return (
         <div>
+            {/* Mensagem de sucesso (pós-edição) */}
+            {successMessage && (
+                <div style={{
+                    padding: 'var(--space-md)',
+                    marginBottom: 'var(--space-lg)',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--success-light)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 'var(--space-sm)'
+                }}>
+                    <div className="flex items-center gap-sm">
+                        <CheckCircle size={20} style={{ color: 'var(--success)' }} />
+                        <span style={{ color: '#15803d' }}>{successMessage}</span>
+                    </div>
+                    <button
+                        onClick={() => setSuccessMessage(null)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                        <X size={16} style={{ color: '#15803d' }} />
+                    </button>
+                </div>
+            )}
+
             {/* Cabeçalho da página */}
             <div style={{ marginBottom: 'var(--space-lg)' }}>
                 <h1>Calendário</h1>
@@ -143,9 +189,20 @@ function CalendarPage() {
                 onClose={() => setSelectedEvent(null)}
                 title="Detalhes da Reunião"
                 footer={
-                    <button className="btn btn-secondary" onClick={() => setSelectedEvent(null)}>
-                        Fechar
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', width: '100%' }}>
+                        {selectedEvent?.is_own_meeting && selectedEvent?.id && (
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => handleEditMeeting(selectedEvent)}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                            >
+                                <Pencil size={15} /> Editar Reunião
+                            </button>
+                        )}
+                        <button className="btn btn-secondary" onClick={() => setSelectedEvent(null)}>
+                            Fechar
+                        </button>
+                    </div>
                 }
             >
                 {selectedEvent && (

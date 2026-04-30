@@ -215,6 +215,108 @@ class GraphService:
             print(f"[ERROR] Erro ao criar evento Teams: {e}")
             return None
     
+    async def update_calendar_event(
+        self,
+        event_id: str,
+        subject: str = None,
+        start: datetime = None,
+        end: datetime = None,
+        attendees: List[str] = None,
+        description: str = None,
+        room_name: str = None
+    ) -> bool:
+        """
+        Atualiza um evento existente no calendário do Outlook/Teams.
+        
+        Usa PATCH para atualizar apenas os campos alterados.
+        O link do Teams é preservado automaticamente.
+        
+        Args:
+            event_id: ID do evento no Microsoft Graph (teams_event_id)
+            subject: Novo título (opcional)
+            start: Nova data/hora de início (opcional)
+            end: Nova data/hora de fim (opcional)
+            attendees: Nova lista de e-mails dos participantes (opcional)
+            description: Nova descrição (opcional)
+            room_name: Nome da sala para o local do evento (opcional)
+            
+        Returns:
+            True se atualizou com sucesso, False se falhou
+        """
+        access_token = await self._get_access_token()
+        if not access_token or not event_id:
+            return False
+        
+        # Monta payload apenas com os campos que foram passados
+        event_data = {}
+        
+        if subject is not None:
+            event_data["subject"] = subject
+        
+        if description is not None:
+            event_data["body"] = {
+                "contentType": "HTML",
+                "content": description
+            }
+        
+        if start is not None:
+            event_data["start"] = {
+                "dateTime": start.strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "America/Sao_Paulo"
+            }
+        
+        if end is not None:
+            event_data["end"] = {
+                "dateTime": end.strftime("%Y-%m-%dT%H:%M:%S"),
+                "timeZone": "America/Sao_Paulo"
+            }
+        
+        if room_name is not None:
+            event_data["location"] = {
+                "displayName": room_name
+            }
+        
+        if attendees is not None:
+            event_data["attendees"] = [
+                {
+                    "emailAddress": {
+                        "address": email,
+                        "name": email.split('@')[0]
+                    },
+                    "type": "required"
+                }
+                for email in attendees
+            ]
+        
+        if not event_data:
+            return True  # Nada para atualizar
+        
+        endpoint = f"{self.GRAPH_API_BASE}/users/{settings.azure_organizer_email}/events/{event_id}"
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=event_data,
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    print(f"[OK] Evento Teams atualizado: {event_id[:20]}...")
+                    return True
+                else:
+                    error = response.json()
+                    print(f"[ERROR] Erro ao atualizar evento Teams ({response.status_code}): {error}")
+                    return False
+                    
+        except Exception as e:
+            print(f"[ERROR] Erro ao atualizar evento Teams: {e}")
+            return False
+
     async def cancel_calendar_event(self, event_id: str) -> bool:
         """
         Cancela (deleta) um evento de calendário no Outlook/Teams.

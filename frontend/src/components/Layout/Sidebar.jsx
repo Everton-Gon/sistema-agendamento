@@ -56,9 +56,26 @@ function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }) {
             {/* ── Cabeçalho com logo ── */}
             <div className="sidebar-header" style={{ justifyContent: 'flex-start' }}>
                 <div className="sidebar-logo">
-                    <div className="sidebar-logo-icon">
-                        {/* <Calendar size={24} /> */}
-                        <img src="/mallory-logo.png" alt="Logo" width={24} height={auto} />
+                    <div className="sidebar-logo-icon" style={{ 
+                        width: '40px', 
+                        height: '40px', 
+                        padding: 0, 
+                        overflow: 'hidden', 
+                        background: 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}>
+                        <img
+                            src="/mallory.png"
+                            alt="Logo"
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                                display: 'block'
+                            }}
+                        />
                     </div>
                     {!collapsed && (
                         <span className="sidebar-logo-text hide-mobile">Agendamento</span>

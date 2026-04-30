@@ -201,10 +201,10 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
             {/* Seletor de visualização — grupo de botões */}
             <div className="view-group hide-mobile">
                 <button
-                    className={`btn-view ${viewMode === 'day' ? 'active' : ''}`}
-                    onClick={() => setViewMode('day')}
+                    className={`btn-view ${viewMode === 'month' ? 'active' : ''}`}
+                    onClick={() => setViewMode('month')}
                 >
-                    Dia
+                    Mês
                 </button>
                 <button
                     className={`btn-view ${viewMode === 'week' ? 'active' : ''}`}
@@ -213,10 +213,10 @@ function Calendar({ events = [], rooms = [], onDayClick, onEventClick, onRefresh
                     Semana
                 </button>
                 <button
-                    className={`btn-view ${viewMode === 'month' ? 'active' : ''}`}
-                    onClick={() => setViewMode('month')}
+                    className={`btn-view ${viewMode === 'day' ? 'active' : ''}`}
+                    onClick={() => setViewMode('day')}
                 >
-                    Mês
+                    Dia
                 </button>
             </div>
         </div>

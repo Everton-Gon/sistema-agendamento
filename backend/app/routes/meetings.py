@@ -100,6 +100,16 @@ class MeetingCreate(BaseModel):
     recurrence_end_date: Optional[str] = None    # Data final da recorrência (yyyy-MM-dd)
 
 
+class MeetingUpdate(BaseModel):
+    """Dados para atualizar uma reunião existente (todos opcionais)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    room_id: Optional[int] = None
+    attendees: Optional[List[AttendeeModel]] = None
+    start_datetime: Optional[str] = None
+    end_datetime: Optional[str] = None
+
+
 class MeetingResponse(BaseModel):
     """Dados da reunião retornados pela API."""
     id: int
@@ -1055,6 +1065,247 @@ async def check_availability(
         response["available_rooms"] = available_rooms
     
     return response
+
+
+# =============================================
+# PUT /api/meetings/{id} — Editar reunião
+# =============================================
+@router.put("/{meeting_id}")
+async def update_meeting(
+    meeting_id: int,
+    update_data: MeetingUpdate,
+    background_tasks: BackgroundTasks,
+    current_user: Usuario = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Atualiza uma reunião existente (apenas o organizador pode editar).
+    
+    Fluxo:
+    1. Busca a reunião e valida permissão (organizador)
+    2. Verifica conflitos de sala excluindo a própria reunião
+    3. Atualiza campos no banco de dados
+    4. Atualiza participantes (remove antigos, cria novos)
+    5. Atualiza evento no Outlook/Teams se existir
+    6. Envia convites para novos participantes
+    """
+    # === 1. Busca reunião e valida permissão ===
+    result = await db.execute(
+        select(Reuniao).options(
+            selectinload(Reuniao.sala),
+            selectinload(Reuniao.participantes),
+            selectinload(Reuniao.organizador)
+        ).where(Reuniao.id == meeting_id)
+    )
+    reuniao = result.scalar_one_or_none()
+    
+    if not reuniao:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada")
+    
+    if reuniao.organizador_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Apenas o organizador pode editar esta reunião")
+    
+    if reuniao.status != 'agendada':
+        raise HTTPException(status_code=400, detail="Apenas reuniões agendadas podem ser editadas")
+    
+    # === 2. Determina novos valores (usa existente se não informado) ===
+    new_title = update_data.title or reuniao.titulo
+    new_description = update_data.description if update_data.description is not None else reuniao.descricao
+    new_room_id = update_data.room_id or reuniao.sala_id
+    new_start = datetime.fromisoformat(update_data.start_datetime) if update_data.start_datetime else reuniao.data_hora_inicio
+    new_end = datetime.fromisoformat(update_data.end_datetime) if update_data.end_datetime else reuniao.data_hora_fim
+    
+    # === 3. Verifica conflito de sala (excluindo a própria reunião) ===
+    conflict_query = select(Reuniao).where(
+        Reuniao.sala_id == new_room_id,
+        Reuniao.status == 'agendada',
+        Reuniao.data_hora_inicio < new_end,
+        Reuniao.data_hora_fim > new_start,
+        Reuniao.id != meeting_id  # ← Exclui a própria reunião!
+    )
+    conflict_result = await db.execute(conflict_query)
+    conflict = conflict_result.scalar_one_or_none()
+    
+    if conflict:
+        # Busca nome da sala para mensagem
+        sala_result = await db.execute(select(Sala).where(Sala.id == new_room_id))
+        sala = sala_result.scalar_one_or_none()
+        
+        # Busca salas alternativas
+        available_rooms = await _find_available_rooms(db, new_start, new_end, new_room_id)
+        
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"A sala '{sala.nome if sala else 'selecionada'}' já está reservada neste horário.",
+                "conflict": {
+                    "title": conflict.titulo,
+                    "start": conflict.data_hora_inicio.isoformat(),
+                    "end": conflict.data_hora_fim.isoformat()
+                },
+                "available_rooms": available_rooms
+            }
+        )
+    
+    # === 3b. Verifica conflito no Outlook da sala ===
+    new_sala_result = await db.execute(
+        select(Sala).options(selectinload(Sala.recursos)).where(Sala.id == new_room_id)
+    )
+    new_sala = new_sala_result.scalar_one_or_none()
+    
+    if new_sala and new_sala.outlook_email:
+        try:
+            query_start = new_start - timedelta(hours=3)
+            query_end = new_end + timedelta(hours=3)
+            room_outlook_events = await graph_service.get_room_calendar_events(
+                new_sala.outlook_email, query_start, query_end
+            )
+            for evt in room_outlook_events:
+                evt_start_str = evt.get("start", {}).get("dateTime", "")
+                evt_end_str = evt.get("end", {}).get("dateTime", "")
+                es = _to_brasilia_naive(evt_start_str)
+                ee = _to_brasilia_naive(evt_end_str)
+                if es is None or ee is None:
+                    continue
+                start_naive = new_start.replace(tzinfo=None)
+                end_naive = new_end.replace(tzinfo=None)
+                # Ignora conflito com o próprio evento (mesmo teams_event_id)
+                evt_id = evt.get("id", "")
+                if reuniao.teams_event_id and evt_id == reuniao.teams_event_id:
+                    continue
+                if es < end_naive and ee > start_naive:
+                    available_rooms = await _find_available_rooms(db, new_start, new_end, new_room_id)
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "message": f"Esta sala já está reservada por: '{evt.get('organizer', {}).get('emailAddress', {}).get('name', 'Usuário Outlook')}'",
+                            "conflict": {
+                                "title": evt.get("subject", "Reunião Outlook"),
+                                "start": es.isoformat(),
+                                "end": ee.isoformat(),
+                                "source": "outlook"
+                            },
+                            "available_rooms": available_rooms
+                        }
+                    )
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[WARN] Erro ao verificar Outlook da sala na edição: {e}")
+    
+    # === 4. Atualiza campos no banco ===
+    reuniao.titulo = new_title
+    reuniao.descricao = new_description
+    reuniao.sala_id = new_room_id
+    reuniao.data_hora_inicio = new_start
+    reuniao.data_hora_fim = new_end
+    
+    # === 5. Atualiza participantes ===
+    emails_antigos = {p.email for p in reuniao.participantes}
+    novos_participantes_info = []
+    
+    if update_data.attendees is not None:
+        emails_novos = {a.email for a in update_data.attendees}
+        
+        # Remove participantes que saíram
+        for p in list(reuniao.participantes):
+            if p.email not in emails_novos:
+                await db.delete(p)
+        
+        # Adiciona participantes novos
+        for att in update_data.attendees:
+            if att.email not in emails_antigos:
+                confirmation_token = secrets.token_urlsafe(32)
+                participante = ParticipanteReuniao(
+                    reuniao_id=reuniao.id,
+                    email=att.email,
+                    nome=att.name,
+                    status='pendente',
+                    confirmation_token=confirmation_token
+                )
+                db.add(participante)
+                novos_participantes_info.append({
+                    "email": att.email,
+                    "name": att.name,
+                    "token": confirmation_token
+                })
+    
+    await db.commit()
+    await db.refresh(reuniao)
+    
+    # === 6. Atualiza evento no Outlook/Teams ===
+    if reuniao.teams_event_id:
+        try:
+            # Monta lista de participantes atualizada
+            attendee_emails = [current_user.email]
+            if update_data.attendees is not None:
+                attendee_emails += [
+                    att.email for att in update_data.attendees
+                    if att.email != current_user.email
+                ]
+            if new_sala and new_sala.outlook_email and new_sala.outlook_email not in attendee_emails:
+                attendee_emails.append(new_sala.outlook_email)
+            
+            await graph_service.update_calendar_event(
+                event_id=reuniao.teams_event_id,
+                subject=new_title,
+                start=new_start,
+                end=new_end,
+                attendees=attendee_emails,
+                description=new_description,
+                room_name=new_sala.nome if new_sala else None
+            )
+        except Exception as e:
+            print(f"[WARN] Erro ao atualizar evento no Teams: {e}")
+    
+    # === 7. Envia convites para NOVOS participantes ===
+    sala_nome = new_sala.nome if new_sala else (reuniao.sala.nome if reuniao.sala else "Sala")
+    for att_info in novos_participantes_info:
+        try:
+            await email_service.send_meeting_invitation(
+                to_email=att_info["email"],
+                participant_name=att_info["name"],
+                meeting_title=new_title,
+                meeting_id=reuniao.id,
+                meeting_date=new_start,
+                meeting_start=new_start.strftime("%H:%M"),
+                meeting_end=new_end.strftime("%H:%M"),
+                room_name=sala_nome,
+                organizer_name=current_user.nome,
+                organizer_email=current_user.email,
+                confirmation_token=att_info["token"],
+                description=new_description,
+                teams_link=reuniao.teams_link
+            )
+        except Exception as e:
+            print(f"[WARN] Erro ao enviar convite para {att_info['email']}: {e}")
+    
+    print(f"[OK] Reunião #{meeting_id} atualizada por {current_user.email}")
+    
+    # === 8. Retorna dados atualizados ===
+    # Recarrega participantes atualizados
+    await db.refresh(reuniao, ['participantes'])
+    
+    return {
+        "id": reuniao.id,
+        "title": reuniao.titulo,
+        "description": reuniao.descricao,
+        "room_id": reuniao.sala_id,
+        "room_name": sala_nome,
+        "room_color": new_sala.cor if new_sala else None,
+        "organizer_id": reuniao.organizador_id,
+        "organizer_email": current_user.email,
+        "organizer_name": current_user.nome,
+        "attendees": [
+            {"email": p.email, "name": p.nome, "status": p.status}
+            for p in reuniao.participantes
+        ],
+        "start_datetime": reuniao.data_hora_inicio.isoformat(),
+        "end_datetime": reuniao.data_hora_fim.isoformat(),
+        "status": reuniao.status,
+        "teams_link": reuniao.teams_link,
+        "created_at": reuniao.criado_em.isoformat()
+    }
 
 
 # =============================================

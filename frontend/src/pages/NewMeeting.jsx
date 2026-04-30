@@ -62,7 +62,7 @@ function NewMeeting() {
             ? (location.state.selectedDate.includes('T')
                 ? format(new Date(location.state.selectedDate), 'yyyy-MM-dd')
                 : location.state.selectedDate)
-            : '',
+            : format(new Date(), 'yyyy-MM-dd'),
         start_time: location.state?.selectedStartTime || '',
         end_time: location.state?.selectedEndTime || '',
         description: '',
@@ -91,6 +91,39 @@ function NewMeeting() {
     // Carrega lista de salas ao montar
     useEffect(() => {
         loadRooms()
+    }, [])
+
+    // === MODO EDICAO: detecta se veio com uma reuniao para editar ===
+    const editMeeting = location.state?.editMeeting || null
+    const returnTo = location.state?.returnTo || '/my-meetings'
+    const isEditing = !!editMeeting
+    const editMeetingId = editMeeting?.id || null
+
+    // Proteção F5: se isEditing mas location.state sumiu, volta para origem
+    useEffect(() => {
+        if (!isEditing) return
+        if (!editMeetingId) {
+            navigate('/my-meetings', { replace: true })
+        }
+    }, [])
+
+    // Pré-preenche o formulário quando em modo de edição
+    useEffect(() => {
+        if (!editMeeting) return
+        const start = new Date(editMeeting.start || editMeeting.start_datetime)
+        const end = new Date(editMeeting.end || editMeeting.end_datetime)
+        setFormData(prev => ({
+            ...prev,
+            title: editMeeting.title || '',
+            room_id: String(editMeeting.room_id || ''),
+            date: format(start, 'yyyy-MM-dd'),
+            start_time: format(start, 'HH:mm'),
+            end_time: format(end, 'HH:mm'),
+            description: editMeeting.description || '',
+            participants: (editMeeting.attendees || []).map(a =>
+                typeof a === 'string' ? a : a.email
+            ).filter(Boolean)
+        }))
     }, [])
 
     // Verifica disponibilidade quando sala, data ou horários mudam
@@ -141,10 +174,12 @@ function NewMeeting() {
             const startStr = `${formData.date}T${formData.start_time}:00`
             const endStr = `${formData.date}T${formData.end_time}:00`
 
+            // Em modo edição, passa o meeting_id para excluir a própria reunião da verificação
             const result = await meetingService.checkAvailability(
                 formData.room_id,
                 startStr,
-                endStr
+                endStr,
+                isEditing ? editMeetingId : null
             )
 
             if (result.is_available) {
@@ -252,10 +287,19 @@ function NewMeeting() {
             newErrors.end_time = 'Horário de fim deve ser após o início'
         }
 
-        // Validação: campos de recorrência
-        if (formData.is_recurring) {
+        // Validação: campos de recorrência (apenas no modo criação)
+        if (!isEditing && formData.is_recurring) {
             if (!formData.recurrence_end_date) {
                 newErrors.recurrence_end_date = 'Selecione a data final da recorrência'
+            } else {
+                // Valida o limite de 60 dias
+                const startRef = new Date(formData.date + 'T00:00:00')
+                const endRef = new Date(formData.recurrence_end_date + 'T00:00:00')
+                const maxEnd = new Date(startRef)
+                maxEnd.setDate(maxEnd.getDate() + 60)
+                if (endRef > maxEnd) {
+                    newErrors.recurrence_end_date = 'A recorrência não pode ultrapassar 60 dias (2 meses) a partir da data de início'
+                }
             }
             if ((formData.recurrence_frequency === 'weekly' || formData.recurrence_frequency === 'biweekly')
                 && formData.recurrence_days.length === 0) {
@@ -272,7 +316,6 @@ function NewMeeting() {
         setErrors({})
 
         try {
-            // Monta objeto de dados da reunião
             const meetingData = {
                 title: formData.title,
                 room_id: parseInt(formData.room_id),
@@ -282,24 +325,35 @@ function NewMeeting() {
                 attendees: formData.participants.map(email => ({
                     email: email,
                     name: email.split('@')[0]
-                })),
-                is_recurring: formData.is_recurring,
-                recurrence_frequency: formData.is_recurring ? formData.recurrence_frequency : null,
-                recurrence_days: formData.is_recurring ? formData.recurrence_days : null,
-                recurrence_end_date: formData.is_recurring ? formData.recurrence_end_date : null
+                }))
             }
 
-            const result = await meetingService.createMeeting(meetingData)
-            const total = result?.total_occurrences || 1
-            const skipped = result?.skipped_conflicts || 0
-            let msg = total > 1
-                ? `${total} reuniões recorrentes criadas com sucesso!`
-                : 'Reunião agendada com sucesso!'
-            if (skipped > 0) msg += ` (${skipped} data(s) com conflito foram ignoradas)`
-            toast.success(msg)
-            navigate('/my-meetings', { state: { success: 'Reunião agendada com sucesso!' } })
+            if (isEditing) {
+                // === MODO EDICAO: PUT /api/meetings/:id ===
+                await meetingService.updateMeeting(editMeetingId, meetingData)
+                toast.success('Reunião atualizada com sucesso!')
+                navigate(returnTo, { state: { successMessage: 'Reunião atualizada com sucesso!' } })
+            } else {
+                // === MODO CRIACAO: POST /api/meetings ===
+                const fullData = {
+                    ...meetingData,
+                    is_recurring: formData.is_recurring,
+                    recurrence_frequency: formData.is_recurring ? formData.recurrence_frequency : null,
+                    recurrence_days: formData.is_recurring ? formData.recurrence_days : null,
+                    recurrence_end_date: formData.is_recurring ? formData.recurrence_end_date : null
+                }
+                const result = await meetingService.createMeeting(fullData)
+                const total = result?.total_occurrences || 1
+                const skipped = result?.skipped_conflicts || 0
+                let msg = total > 1
+                    ? `${total} reuniões recorrentes criadas com sucesso!`
+                    : 'Reunião agendada com sucesso!'
+                if (skipped > 0) msg += ` (${skipped} data(s) com conflito foram ignoradas)`
+                toast.success(msg)
+                navigate('/my-meetings', { state: { success: 'Reunião agendada com sucesso!' } })
+            }
         } catch (error) {
-            console.error('Error creating meeting:', error)
+            console.error('Error saving meeting:', error)
 
             // Tratamento específico: conflito de horário (HTTP 409)
             if (error.response?.status === 409) {
@@ -307,7 +361,7 @@ function NewMeeting() {
                 setErrors({ submit: data.message })
                 setSuggestedRooms(data.available_rooms || [])
             } else {
-                setErrors({ submit: 'Erro ao agendar reunião. Tente novamente.' })
+                setErrors({ submit: 'Erro ao salvar a reunião. Tente novamente.' })
             }
         } finally {
             setSubmitting(false)
@@ -322,7 +376,7 @@ function NewMeeting() {
      */
     function handleQuickTime(type) {
         const times = {
-            manha: { start: '08:00', end: '11:59' },
+            manha: { start: '08:00', end: '12:00' },
             tarde: { start: '12:00', end: '18:00' },
             dia:   { start: '08:00', end: '18:00' },
         }
@@ -346,9 +400,11 @@ function NewMeeting() {
         <div style={{ maxWidth: '700px', margin: '0 auto' }}>
             {/* Cabeçalho da página */}
             <div style={{ marginBottom: 'var(--space-lg)' }}>
-                <h1>Agendar Reunião</h1>
+                <h1>{isEditing ? 'Editar Agendamento' : 'Agendar Reunião'}</h1>
                 <p style={{ color: 'var(--text-secondary)' }}>
-                    Preencha os dados para agendar uma nova reunião
+                    {isEditing
+                        ? 'Ajuste os dados da reunião e salve as alterações'
+                        : 'Preencha os dados para agendar uma nova reunião'}
                 </p>
             </div>
 
@@ -449,9 +505,9 @@ function NewMeeting() {
                         {/* ====== ATALHOS DE HORÁRIO ====== */}
                         <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
                             {[
-                                { key: 'manha', label: '🌅 Manhã toda', desc: '08:00 - 11:59' },
-                                { key: 'tarde', label: '🌇 Tarde toda',  desc: '12:00 - 18:00' },
-                                { key: 'dia',   label: '📅 Dia todo',    desc: '08:00 - 18:00' },
+                                { key: 'manha', label: '🌅 Manhã', desc: '08:00 - 12:00' },
+                                { key: 'tarde', label: '🌇 Tarde',  desc: '12:00 - 18:00' },
+                                { key: 'dia',   label: '📅 Dia',    desc: '08:00 - 18:00' },
                             ].map(({ key, label, desc }) => (
                                 <button
                                     key={key}
@@ -734,8 +790,21 @@ function NewMeeting() {
                                             onChange={(e) => setFormData({ ...formData, recurrence_end_date: e.target.value })}
                                             className="input"
                                             min={formData.date || format(new Date(), 'yyyy-MM-dd')}
+                                            max={(() => {
+                                                const base = formData.date ? new Date(formData.date + 'T00:00:00') : new Date()
+                                                base.setDate(base.getDate() + 60)
+                                                return format(base, 'yyyy-MM-dd')
+                                            })()}
                                             style={{ maxWidth: '220px' }}
                                         />
+                                        <span style={{
+                                            fontSize: '0.72rem',
+                                            color: 'var(--text-muted)',
+                                            marginTop: '4px',
+                                            display: 'block'
+                                        }}>
+                                            ⚠️ Máximo de 60 dias (2 meses) a partir da data de início
+                                        </span>
                                     </div>
 
                                     {/* Preview: quantas reuniões serão criadas */}
@@ -1028,11 +1097,11 @@ function NewMeeting() {
                             {submitting ? (
                                 <>
                                     <div className="spinner spinner-sm" style={{ borderTopColor: 'white' }} />
-                                    Agendando...
+                                    {isEditing ? 'Salvando...' : 'Agendando...'}
                                 </>
                             ) : (
                                 <>
-                                    Agendar Reunião
+                                    {isEditing ? 'Salvar Alterações' : 'Agendar Reunião'}
                                     <ArrowRight size={18} />
                                 </>
                             )}
