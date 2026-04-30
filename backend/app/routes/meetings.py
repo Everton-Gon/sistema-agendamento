@@ -983,13 +983,9 @@ async def check_availability(
                     sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
-                    # Debug para conferir IDs (causa provável de falso-conflito)
-                    print(f"[DEBUG] check_availability -> banco: {current_teams_event_id}")
-                    print(f"[DEBUG] check_availability -> outlook: {evt.get('id')}")
-
                     # Ignora se for o próprio evento da reunião que estamos editando
+                    # Comparação 1: ID exato (se bater)
                     if current_teams_event_id and evt.get("id") == current_teams_event_id:
-                        print("[DEBUG] check_availability -> Sucesso! Ignorando o próprio evento.")
                         continue
                         
                     evt_s = evt.get("start", {}).get("dateTime", "")
@@ -999,6 +995,14 @@ async def check_availability(
                     ee = _to_brasilia_naive(evt_e)
                     if es is None or ee is None:
                         continue
+
+                    # Comparação 2: Fallback por horário exato 
+                    # (Cobre casos onde o Graph API gera IDs diferentes para o mesmo evento em calendários distintos)
+                    if meeting_id and es is not None and ee is not None:
+                        # Comparamos com o horário ATUAL (original) da reunião no banco
+                        if es == start_dt.replace(tzinfo=None) and ee == end_dt.replace(tzinfo=None):
+                            continue
+
                     # Normaliza start_dt/end_dt para naive também (evita TypeError de fuso horário)
                     start_naive = start_dt.replace(tzinfo=None)
                     end_naive = end_dt.replace(tzinfo=None)
@@ -1178,23 +1182,25 @@ async def update_meeting(
                 new_sala.outlook_email, query_start, query_end
             )
             for evt in room_outlook_events:
-                # Debug para conferir IDs na edição
-                print(f"[DEBUG] update_meeting -> banco: {reuniao.teams_event_id}")
-                print(f"[DEBUG] update_meeting -> outlook: {evt.get('id')}")
-
                 evt_start_str = evt.get("start", {}).get("dateTime", "")
                 evt_end_str = evt.get("end", {}).get("dateTime", "")
                 es = _to_brasilia_naive(evt_start_str)
                 ee = _to_brasilia_naive(evt_end_str)
                 if es is None or ee is None:
                     continue
-                start_naive = new_start.replace(tzinfo=None)
-                end_naive = new_end.replace(tzinfo=None)
-                # Ignora conflito com o próprio evento (mesmo teams_event_id)
+
+                # Ignora conflito com o próprio evento
+                # Comparação 1: ID exato
                 evt_id = evt.get("id", "")
                 if reuniao.teams_event_id and evt_id == reuniao.teams_event_id:
-                    print("[DEBUG] update_meeting -> Sucesso! Ignorando o próprio evento.")
                     continue
+
+                # Comparação 2: Fallback por horário exato (original da reunião no banco)
+                if es == reuniao.data_hora_inicio.replace(tzinfo=None) and ee == reuniao.data_hora_fim.replace(tzinfo=None):
+                    continue
+
+                start_naive = new_start.replace(tzinfo=None)
+                end_naive = new_end.replace(tzinfo=None)
                 if es < end_naive and ee > start_naive:
                     available_rooms = await _find_available_rooms(db, new_start, new_end, new_room_id)
                     raise HTTPException(
