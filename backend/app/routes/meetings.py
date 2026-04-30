@@ -983,8 +983,13 @@ async def check_availability(
                     sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
+                    # Debug para conferir IDs (causa provável de falso-conflito)
+                    print(f"[DEBUG] check_availability -> banco: {current_teams_event_id}")
+                    print(f"[DEBUG] check_availability -> outlook: {evt.get('id')}")
+
                     # Ignora se for o próprio evento da reunião que estamos editando
                     if current_teams_event_id and evt.get("id") == current_teams_event_id:
+                        print("[DEBUG] check_availability -> Sucesso! Ignorando o próprio evento.")
                         continue
                         
                     evt_s = evt.get("start", {}).get("dateTime", "")
@@ -1173,6 +1178,10 @@ async def update_meeting(
                 new_sala.outlook_email, query_start, query_end
             )
             for evt in room_outlook_events:
+                # Debug para conferir IDs na edição
+                print(f"[DEBUG] update_meeting -> banco: {reuniao.teams_event_id}")
+                print(f"[DEBUG] update_meeting -> outlook: {evt.get('id')}")
+
                 evt_start_str = evt.get("start", {}).get("dateTime", "")
                 evt_end_str = evt.get("end", {}).get("dateTime", "")
                 es = _to_brasilia_naive(evt_start_str)
@@ -1184,6 +1193,7 @@ async def update_meeting(
                 # Ignora conflito com o próprio evento (mesmo teams_event_id)
                 evt_id = evt.get("id", "")
                 if reuniao.teams_event_id and evt_id == reuniao.teams_event_id:
+                    print("[DEBUG] update_meeting -> Sucesso! Ignorando o próprio evento.")
                     continue
                 if es < end_naive and ee > start_naive:
                     available_rooms = await _find_available_rooms(db, new_start, new_end, new_room_id)
