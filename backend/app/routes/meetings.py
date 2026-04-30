@@ -954,12 +954,20 @@ async def check_availability(
         Reuniao.data_hora_fim > start_dt
     )
     
-    # Se estiver editando, exclui a própria reunião da verificação
+    # Se estiver editando, exclui a própria reunião da verificação local
     if meeting_id:
         query = query.where(Reuniao.id != meeting_id)
     
+    # Executa a busca no banco local
     result = await db.execute(query)
     conflict = result.scalar_one_or_none()
+    
+    # Se estiver editando, busca o teams_event_id para ignorar no Outlook também
+    current_teams_event_id = None
+    if meeting_id:
+        current_meeting = await db.get(Reuniao, meeting_id)
+        if current_meeting:
+            current_teams_event_id = current_meeting.teams_event_id
     
     # Se nao ha conflito no banco local, verifica no Outlook/Teams da SALA
     outlook_conflict = None
@@ -975,6 +983,10 @@ async def check_availability(
                     sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
+                    # Ignora se for o próprio evento da reunião que estamos editando
+                    if current_teams_event_id and evt.get("id") == current_teams_event_id:
+                        continue
+                        
                     evt_s = evt.get("start", {}).get("dateTime", "")
                     evt_e = evt.get("end", {}).get("dateTime", "")
                     # Converte para BRT naive (trata "Z", offsets e naive corretamente)
