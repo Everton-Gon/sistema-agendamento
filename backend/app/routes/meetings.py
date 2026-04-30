@@ -983,8 +983,7 @@ async def check_availability(
                     sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
-                    # Ignora se for o próprio evento da reunião que estamos editando
-                    # Comparação 1: ID exato (se bater)
+                    # Ignora se for o próprio evento pelo ID
                     if current_teams_event_id and evt.get("id") == current_teams_event_id:
                         continue
                         
@@ -996,16 +995,14 @@ async def check_availability(
                     if es is None or ee is None:
                         continue
 
-                    # Comparação 2: Fallback por horário exato 
-                    # (Cobre casos onde o Graph API gera IDs diferentes para o mesmo evento em calendários distintos)
-                    if meeting_id and es is not None and ee is not None:
-                        # Comparamos com o horário ATUAL (original) da reunião no banco
-                        if es == start_dt.replace(tzinfo=None) and ee == end_dt.replace(tzinfo=None):
-                            continue
-
-                    # Normaliza start_dt/end_dt para naive também (evita TypeError de fuso horário)
+                    # Normaliza start_dt/end_dt para naive
                     start_naive = start_dt.replace(tzinfo=None)
                     end_naive = end_dt.replace(tzinfo=None)
+
+                    # Fallback: ignora se o horário bate exatamente (mesmo evento, ID diferente por calendário)
+                    if es == start_naive and ee == end_naive:
+                        continue
+
                     if es < end_naive and ee > start_naive:
                         outlook_conflict = {
                             "title": evt.get("subject", "Reunião Outlook"),
