@@ -578,6 +578,9 @@ class GraphService:
 
                 # Qualquer outro erro → assume que existe (evita falso-positivo)
                 return True
+        except Exception as e:
+            print(f"[WARN] Erro ao verificar evento {event_id}: {e}")
+            return True  # Em caso de erro, não cancela (segurança)
 
     async def get_event_details(self, event_id: str) -> Optional[dict]:
         """
@@ -605,10 +608,6 @@ class GraphService:
         except Exception as e:
             print(f"[ERROR] Falha ao obter detalhes do evento {event_id}: {e}")
             return None
-
-        except Exception as e:
-            print(f"[WARN] Erro ao verificar evento {event_id}: {e}")
-            return True  # Em caso de erro, não cancela (segurança)
 
 
     async def search_users_in_directory(self, query: str) -> List[dict]:
