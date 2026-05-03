@@ -384,7 +384,7 @@ class GraphService:
         endpoint = (
             f"{self.GRAPH_API_BASE}/users/{settings.azure_organizer_email}"
             f"/calendarView?startDateTime={start_str}&endDateTime={end_str}"
-            f"&$select=subject,start,end,organizer,isOnlineMeeting,isCancelled"
+            f"&$select=subject,start,end,organizer,isOnlineMeeting,isCancelled,iCalUId"
             f"&$orderby=start/dateTime"
             f"&$top=50"
         )
@@ -449,7 +449,7 @@ class GraphService:
         endpoint = (
             f"{self.GRAPH_API_BASE}/users/{room_email}"
             f"/calendarView?startDateTime={start_str}&endDateTime={end_str}"
-            f"&$select=subject,start,end,organizer,isOnlineMeeting,isCancelled"
+            f"&$select=subject,start,end,organizer,isOnlineMeeting,isCancelled,iCalUId"
             f"&$orderby=start/dateTime"
             f"&$top=50"
         )
@@ -578,6 +578,33 @@ class GraphService:
 
                 # Qualquer outro erro → assume que existe (evita falso-positivo)
                 return True
+
+    async def get_event_details(self, event_id: str) -> Optional[dict]:
+        """
+        Busca detalhes completos de um evento, incluindo o iCalUId.
+        """
+        access_token = await self._get_access_token()
+        if not access_token:
+            return None
+
+        endpoint = (
+            f"{self.GRAPH_API_BASE}/users/{settings.azure_organizer_email}"
+            f"/events/{event_id}?$select=id,subject,iCalUId,start,end"
+        )
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    endpoint,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=8.0
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return None
+        except Exception as e:
+            print(f"[ERROR] Falha ao obter detalhes do evento {event_id}: {e}")
+            return None
 
         except Exception as e:
             print(f"[WARN] Erro ao verificar evento {event_id}: {e}")

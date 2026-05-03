@@ -962,12 +962,17 @@ async def check_availability(
     result = await db.execute(query)
     conflict = result.scalar_one_or_none()
     
-    # Se estiver editando, busca o teams_event_id para ignorar no Outlook também
+    # Se estiver editando, busca o iCalUId para ignorar no Outlook de forma definitiva
     current_teams_event_id = None
+    current_ical_uid = None
     if meeting_id:
         current_meeting = await db.get(Reuniao, meeting_id)
-        if current_meeting:
+        if current_meeting and current_meeting.teams_event_id:
             current_teams_event_id = current_meeting.teams_event_id
+            # Busca o iCalUId direto no Outlook do organizador
+            evt_details = await graph_service.get_event_details(current_meeting.teams_event_id)
+            if evt_details:
+                current_ical_uid = evt_details.get("iCalUId")
     
     # Se nao ha conflito no banco local, verifica no Outlook/Teams da SALA
     outlook_conflict = None
@@ -983,8 +988,12 @@ async def check_availability(
                     sala_chk.outlook_email, query_start, query_end
                 )
                 for evt in room_outlook_events:
-                    # Ignora se for o próprio evento pelo ID
+                    # 1. Ignora se for o próprio evento pelo ID direto (se bater)
                     if current_teams_event_id and evt.get("id") == current_teams_event_id:
+                        continue
+                    
+                    # 2. Ignora se for o próprio evento pelo iCalUId (ID universal - resolve ID Organizador vs Sala)
+                    if current_ical_uid and evt.get("iCalUId") == current_ical_uid:
                         continue
                         
                     evt_s = evt.get("start", {}).get("dateTime", "")
@@ -999,12 +1008,10 @@ async def check_availability(
                     start_naive = start_dt.replace(tzinfo=None)
                     end_naive = end_dt.replace(tzinfo=None)
 
-                    # Fallback: ignora se o horário bate (com tolerância de 1 minuto para lidar com :00 vs :59 segundos)
-                    # (Cobre casos onde o Graph API gera IDs diferentes para o mesmo evento em calendários distintos)
+                    # 3. Fallback: ignora se o horário bate (com tolerância de 1 minuto)
                     if meeting_id and es is not None and ee is not None:
                         diff_start = abs((es - start_dt.replace(tzinfo=None)).total_seconds())
                         diff_end = abs((ee - end_dt.replace(tzinfo=None)).total_seconds())
-                        
                         if diff_start < 60 and diff_end < 60:
                             continue
 
