@@ -999,9 +999,14 @@ async def check_availability(
                     start_naive = start_dt.replace(tzinfo=None)
                     end_naive = end_dt.replace(tzinfo=None)
 
-                    # Fallback: ignora se o horário bate exatamente (mesmo evento, ID diferente por calendário)
-                    if es == start_naive and ee == end_naive:
-                        continue
+                    # Fallback: ignora se o horário bate (com tolerância de 1 minuto para lidar com :00 vs :59 segundos)
+                    # (Cobre casos onde o Graph API gera IDs diferentes para o mesmo evento em calendários distintos)
+                    if meeting_id and es is not None and ee is not None:
+                        diff_start = abs((es - start_dt.replace(tzinfo=None)).total_seconds())
+                        diff_end = abs((ee - end_dt.replace(tzinfo=None)).total_seconds())
+                        
+                        if diff_start < 60 and diff_end < 60:
+                            continue
 
                     if es < end_naive and ee > start_naive:
                         outlook_conflict = {
