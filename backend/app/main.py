@@ -122,7 +122,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://malloryapp.com.br",     # Frontend em produção
+        "https://localhost.com.br",     # Frontend em produção
         "http://localhost:5173",          # Vite dev server (desenvolvimento local)
         "http://localhost:3000",          # Alternativa (React CRA)
         settings.frontend_url             # URL configurável via .env
