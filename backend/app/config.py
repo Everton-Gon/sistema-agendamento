@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # ==========================================
     # Frontend — URL para CORS e links de e-mail
     # ==========================================
-    frontend_url: str = "https://malloryapp.com.br"  # URL do frontend React
+    frontend_url: str = "https://dominio.com.br"  # URL do frontend React
     
     # ==========================================
     # SMTP — Configurações de envio de e-mail
