@@ -20,7 +20,7 @@ export const msalConfig = {
     auth: {
         clientId: import.meta.env.VITE_MICROSOFT_CLIENT_ID || '',       // ID da app registrada no Azure
         authority: `https://login.microsoftonline.com/${import.meta.env.VITE_MICROSOFT_TENANT_ID || 'common'}`,  // Endpoint de login do tenant
-        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://malloryapp.com.br/auth-redirect.html',       // URL de redirecionamento após login
+        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://empresa.com.br/auth-redirect.html',       // URL de redirecionamento após login
         postLogoutRedirectUri: '/',       // Redireciona para raiz após logout
         navigateToLoginRequestUrl: false  // Não navega automaticamente após login
     },
@@ -64,5 +64,5 @@ export const loginRequest = {
 
 // Configuração da API backend
 export const apiConfig = {
-    baseUrl: import.meta.env.VITE_API_URL || 'https://malloryapp.com.br:8000'  // URL do servidor FastAPI
+    baseUrl: import.meta.env.VITE_API_URL || 'https://empresa.com.br:8000'  // URL do servidor FastAPI
 }
