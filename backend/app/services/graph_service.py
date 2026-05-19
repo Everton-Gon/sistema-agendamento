@@ -426,7 +426,7 @@ class GraphService:
         """
         Busca eventos do calendário de uma SALA específica no Outlook.
         
-        Usa o email da Room Mailbox (ex: salareuniao02@mallory.com.br)
+        Usa o email da Room Mailbox (ex: salareuniao02@email.com.br)
         para buscar via /users/{room_email}/calendarView.
         
         Requer permissão Calendars.Read no Azure AD (application scope).
