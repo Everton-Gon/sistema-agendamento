@@ -3,11 +3,11 @@
  *   authConfig.js — Configuração do MSAL (Microsoft Auth)
  * =============================================================
  *   Configura a biblioteca @azure/msal-browser para autenticar
- *   usuários com suas contas corporativas da Microsoft (Mallory).
+ *   usuários com suas contas corporativas da Microsoft.
  *
  *   Variáveis lidas do arquivo frontend/.env:
  *   - VITE_MICROSOFT_CLIENT_ID  → ID do App registrado no Azure
- *   - VITE_MICROSOFT_TENANT_ID  → ID do locatário (Mallory)
+ *   - VITE_MICROSOFT_TENANT_ID  → ID do locatário (empresa)
  *   - VITE_MICROSOFT_REDIRECT_URI → URL de retorno após login
  * =============================================================
  */
@@ -22,7 +22,7 @@ export const msalConfig = {
         authority: `https://login.microsoftonline.com/${import.meta.env.VITE_MICROSOFT_TENANT_ID}`,
 
         // URL para onde a Microsoft redireciona após o login bem-sucedido
-        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://malloryapp.com.br/',
+        redirectUri: import.meta.env.VITE_MICROSOFT_REDIRECT_URI || 'https://dominio.com.br/',
     },
     cache: {
         // localStorage persiste durante redirecionamentos (ao contrário de sessionStorage
