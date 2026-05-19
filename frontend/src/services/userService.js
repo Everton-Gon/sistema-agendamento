@@ -3,7 +3,7 @@
  *   userService.js — Serviço de busca de usuários
  * =============================================================
  *   Usado pelo People Picker na tela de Nova Reunião.
- *   Busca usuários da Mallory por nome ou e-mail.
+ *   Busca usuários da empresa por nome ou e-mail.
  * =============================================================
  */
 
